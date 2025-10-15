@@ -10,6 +10,25 @@ const METRICS_DAILY_FILE = '.metrics_daily.json';
 const METRICS_WEEKLY_FILE = '.metrics_weekly.json';
 const METRICS_MONTHLY_FILE = '.metrics_monthly.json';
 
+/**
+ * Get the filename for storing metrics based on the interval
+ * @param interval - The metrics interval ('default', 'daily', 'weekly', 'monthly')
+ * @returns The filename for the metrics file
+ */
+function getMetricsFileName(interval: string = 'default'): string {
+  switch (interval) {
+    case 'daily':
+      return METRICS_DAILY_FILE;
+    case 'weekly':
+      return METRICS_WEEKLY_FILE;
+    case 'monthly':
+      return METRICS_MONTHLY_FILE;
+    case 'default':
+    default:
+      return METRICS_FILE;
+  }
+}
+
 // Global registries
 const registries = {
   default: register, // All-time metrics (never cleared)
