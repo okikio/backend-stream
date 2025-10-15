@@ -32,13 +32,13 @@ jobs:
       run: pnpm install
     
     - name: Build
-      run: pnpm run build
+      run: pnpm run build && ls --la
 
     - name: Upload build artifact
       uses: actions/upload-artifact@v4
       with:
         name: backend
-        path: ./.output
+        path: .output
 
   release:
     name: Release
