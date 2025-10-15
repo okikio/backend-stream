@@ -7,7 +7,6 @@ dist
 .env
 .vscode
 .metrics.json
-pnpm-lock.yaml
 .metrics_weekly.json
 .metrics_monthly.json
 .metrics_daily.json
