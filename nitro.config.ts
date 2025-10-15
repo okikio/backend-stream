@@ -9,6 +9,9 @@ export default defineNitroConfig({
     asyncContext: true,
     tasks: true,
   },
+  rollupConfig: {
+    external: ['@prisma/client', '.prisma/client'],
+  },
   scheduledTasks: {
     // Daily cron jobs (midnight)
     '0 0 * * *': ['jobs:clear-metrics:daily'],
