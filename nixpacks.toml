@@ -1,7 +1,7 @@
 [phases.setup]
 commands = [
-  "npx prisma generate",
-  "npx prisma migrate deploy"
+  "pnpm dlx prisma generate",
+  "pnpm dlx prisma migrate deploy"
 ]
 
 [phases.install]

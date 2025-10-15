@@ -34,10 +34,10 @@ ENV NODE_ENV=${NODE_ENV}
 
 COPY . .
 
-RUN npx prisma generate
+RUN pnpm dlx prisma generate
 
 RUN npm run build
 
 EXPOSE 3000
 
-CMD ["sh", "-c", "npx prisma migrate deploy && node .output/server/index.mjs"]
+CMD ["sh", "-c", "pnpm dlx prisma migrate deploy && node .output/server/index.mjs"]
