@@ -36,7 +36,7 @@ COPY . .
 
 RUN pnpm dlx prisma generate
 
-RUN npm run build
+RUN pnpm run build
 
 EXPOSE 3000
 
