@@ -31,27 +31,6 @@ RUN pnpm install --frozen-lockfile
 RUN pnpm exec prisma generate
 
 # ============================================
-# Builder stage
-# ============================================
-FROM base AS builder
-
-WORKDIR /app
-
-# Copy node_modules from deps stage
-COPY --from=deps /app/node_modules ./node_modules
-
-# Copy application source
-COPY . .
-
-# Build the Nitro application
-# This creates an optimized standalone output in .output/
-RUN pnpm run build
-
-# Re-generate Prisma Client after build to ensure it's in the output
-# This is critical because Nitro's build might bundle/move files
-RUN pnpm exec prisma generate
-
-# ============================================
 # Production runner stage
 # ============================================
 FROM base AS runner
@@ -65,16 +44,14 @@ RUN addgroup --system --gid 1001 nodejs && \
 # Set production environment
 ENV NODE_ENV=production
 
-# Copy the Nitro output with embedded node_modules
-COPY --from=builder --chown=nitro:nodejs /app/.output ./.output
+# Copy node_modules from deps stage
+COPY --from=deps --chown=nitro:nodejs /app/node_modules ./node_modules
 
-# Copy Prisma schema (needed for migrations at runtime)
-COPY --from=builder --chown=nitro:nodejs /app/prisma ./prisma
+# Copy Prisma schema (needed for migrations and generation at runtime)
+COPY --from=deps --chown=nitro:nodejs /app/prisma ./prisma
 
-# CRITICAL: Copy the generated Prisma Client to where Nitro expects it
-# Nitro bundles code into .output but Prisma Client needs to be available
-COPY --from=builder --chown=nitro:nodejs /app/node_modules/.prisma ./.output/server/node_modules/.prisma
-COPY --from=builder --chown=nitro:nodejs /app/node_modules/@prisma/client ./.output/server/node_modules/@prisma/client
+# Copy application source
+COPY --chown=nitro:nodejs . .
 
 # Create writable directory for application data (metrics, logs, etc.)
 RUN mkdir -p /app/data && chown -R nitro:nodejs /app/data
@@ -88,5 +65,6 @@ EXPOSE 3000
 ENV PORT=3000
 ENV HOST=0.0.0.0
 
-# Start the Nitro server
-CMD ["node", ".output/server/index.mjs"]
+# Build and start the Nitro server at runtime with environment variables
+# This ensures env vars are available during the build process
+CMD pnpm exec prisma generate && pnpm run build && node .output/server/index.mjs
