@@ -38,11 +38,21 @@ WORKDIR /app
 # Install openssl for Prisma
 RUN apk add --no-cache openssl
 
-# Copy only production dependencies and built output
+# Copy package files for prisma
+COPY package.json pnpm-lock.yaml ./
+
+# Install only Prisma CLI and Prisma Client (needed for runtime)
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm add -P prisma @prisma/client
+
+# Copy prisma schema
+COPY prisma ./prisma/
+
+# Generate Prisma Client in production
+RUN pnpm exec prisma generate
+
+# Copy built output
 COPY --from=build /app/.output ./.output
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/prisma ./prisma
-COPY --from=build /app/package.json ./package.json
 
 # Set production environment
 ENV NODE_ENV=production
