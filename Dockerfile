@@ -1,12 +1,8 @@
-FROM node:24-alpine
-WORKDIR /app
+# syntax=docker/dockerfile:1
+FROM node:24-alpine as base
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
-
-COPY package.json ./
-COPY pnpm-lock.yaml ./
-RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 
 ARG DATABASE_URL
 ARG DATABASE_URL_DOCKER
@@ -32,12 +28,53 @@ ENV TRAKT_CLIENT_ID=${TRAKT_CLIENT_ID}
 ENV TRAKT_SECRET_ID=${TRAKT_SECRET_ID}
 ENV NODE_ENV=${NODE_ENV}
 
-COPY . .
+# Dependencies stage
+FROM base AS deps
+WORKDIR /app
 
+# Copy only lockfile first for better caching
+COPY pnpm-lock.yaml ./
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm fetch --frozen-lockfile
+
+# Copy package.json and install
+COPY package.json ./
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile --offline
+
+# Build stage
+FROM base AS build
+WORKDIR /app
+
+# Copy dependencies from deps stage
+COPY --from=deps /app/node_modules ./node_modules
+COPY package.json pnpm-lock.yaml ./
+
+# Copy prisma schema and generate client
+COPY prisma ./prisma/
 RUN pnpm dlx prisma generate
 
+# Copy source and build
+COPY . .
 RUN pnpm run build
+
+# Production stage
+FROM base AS production
+WORKDIR /app
+
+# Install openssl for Prisma
+RUN apk add --no-cache openssl
+
+# Copy built output and necessary files
+COPY --from=build /app/.output ./.output
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/prisma ./prisma
+COPY --from=build /app/package.json ./package.json
+
+# Set production environment
+ENV NODE_ENV=production
 
 EXPOSE 3000
 
+# Run migrations then start server
 CMD ["sh", "-c", "pnpm dlx prisma migrate deploy && node .output/server/index.mjs"]
