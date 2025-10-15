@@ -1,10 +1,12 @@
 FROM node:24-alpine
-
 WORKDIR /app
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable
 
-COPY package*.json ./
-
-RUN npm ci
+COPY package.json ./
+COPY pnpm-lock.yaml ./
+RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 
 ARG DATABASE_URL
 ARG DATABASE_URL_DOCKER
