@@ -19,7 +19,7 @@ WORKDIR /app
 FROM base AS deps
 
 # Copy dependency manifests
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml .npmrc ./
 
 # Copy Prisma schema to enable client generation
 COPY prisma ./prisma/
@@ -37,27 +37,20 @@ FROM base AS runner
 
 WORKDIR /app
 
-# Create non-root user for security
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nitro
-
 # Set production environment
 ENV NODE_ENV=production
 
 # Copy node_modules from deps stage
-COPY --from=deps --chown=nitro:nodejs /app/node_modules ./node_modules
+COPY --from=deps /app/node_modules ./node_modules
+
+# Copy .npmrc to maintain pnpm configuration
+COPY --from=deps /app/.npmrc ./.npmrc
 
 # Copy Prisma schema (needed for migrations and generation at runtime)
-COPY --from=deps --chown=nitro:nodejs /app/prisma ./prisma
+COPY --from=deps /app/prisma ./prisma
 
 # Copy application source
-COPY --chown=nitro:nodejs . .
-
-# Create writable directory for application data (metrics, logs, etc.)
-RUN mkdir -p /app/data && chown -R nitro:nodejs /app/data
-
-# Switch to non-root user
-USER nitro
+COPY . .
 
 # Expose the application port
 EXPOSE 3000
@@ -66,5 +59,10 @@ ENV PORT=3000
 ENV HOST=0.0.0.0
 
 # Build and start the Nitro server at runtime with environment variables
-# This ensures env vars are available during the build process
-CMD pnpm exec prisma generate && pnpm run build && node .output/server/index.mjs
+# Copy Prisma with -L to follow symlinks and copy actual content
+CMD pnpm run build && \
+    mkdir -p .output/server/node_modules && \
+    cp -rL node_modules/.prisma .output/server/node_modules/ 2>/dev/null || true && \
+    cp -rL node_modules/@prisma .output/server/node_modules/ 2>/dev/null || true && \
+    cd .output/server && \
+    node index.mjs
