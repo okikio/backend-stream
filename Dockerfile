@@ -76,6 +76,9 @@ COPY --from=builder --chown=nitro:nodejs /app/prisma ./prisma
 COPY --from=builder --chown=nitro:nodejs /app/node_modules/.prisma ./.output/server/node_modules/.prisma
 COPY --from=builder --chown=nitro:nodejs /app/node_modules/@prisma/client ./.output/server/node_modules/@prisma/client
 
+# Create writable directory for application data (metrics, logs, etc.)
+RUN mkdir -p /app/data && chown -R nitro:nodejs /app/data
+
 # Switch to non-root user
 USER nitro
 
