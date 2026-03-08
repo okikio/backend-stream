@@ -10,4 +10,4 @@ dist
 .metrics_weekly.json
 .metrics_monthly.json
 .metrics_daily.json
-.DS_Store
+generated

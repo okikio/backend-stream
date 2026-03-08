@@ -1,7 +1,5 @@
 import { useAuth } from '#imports';
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { prisma } from '#imports';
 
 export default defineEventHandler(async event => {
   const userId = event.context.params?.id;

@@ -19,6 +19,7 @@ export default defineEventHandler(async event => {
       id: user.id,
       publicKey: user.public_key,
       namespace: user.namespace,
+      nickname: user.nickname,
       profile: user.profile,
       permissions: user.permissions,
     },

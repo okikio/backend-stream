@@ -10,23 +10,15 @@ const METRICS_DAILY_FILE = '.metrics_daily.json';
 const METRICS_WEEKLY_FILE = '.metrics_weekly.json';
 const METRICS_MONTHLY_FILE = '.metrics_monthly.json';
 
-/**
- * Get the filename for storing metrics based on the interval
- * @param interval - The metrics interval ('default', 'daily', 'weekly', 'monthly')
- * @returns The filename for the metrics file
- */
-function getMetricsFileName(interval: string = 'default'): string {
-  switch (interval) {
-    case 'daily':
-      return METRICS_DAILY_FILE;
-    case 'weekly':
-      return METRICS_WEEKLY_FILE;
-    case 'monthly':
-      return METRICS_MONTHLY_FILE;
-    case 'default':
-    default:
-      return METRICS_FILE;
-  }
+function getMetricsFileName(interval: string): string {
+  const fileMap: Record<string, string> = {
+    default: METRICS_FILE,
+    daily: METRICS_DAILY_FILE,
+    weekly: METRICS_WEEKLY_FILE,
+    monthly: METRICS_MONTHLY_FILE,
+  };
+  const name = fileMap[interval] ?? `.metrics_${interval}.json`;
+  return path.join(process.cwd(), name);
 }
 
 // Global registries

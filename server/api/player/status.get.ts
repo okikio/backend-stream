@@ -33,7 +33,7 @@ export default defineEventHandler(event => {
     const key = `${userId}:${roomCode}`;
     const statuses = playerStatusStore.get(key) || [];
 
-    // Remove statuses older than 15 minutes
+    // Remove statuses older than the cleanup interval (30 minutes)
     const cutoffTime = Date.now() - CLEANUP_INTERVAL;
     const recentStatuses = statuses.filter(status => status.timestamp >= cutoffTime);
 

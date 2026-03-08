@@ -1,6 +1,6 @@
 # Player Status API
 
-This API allows for tracking and retrieving player status data for users in watch party rooms. Status data is automatically cleaned up if it's older than 1 minute.
+This API allows for tracking and retrieving player status data for users in watch party rooms. Status data is automatically cleaned up if it's older than 30 minutes.
 
 ## Endpoints
 
@@ -142,6 +142,6 @@ Get status updates for all users in a specific room.
 
 ## Notes
 
-- Status data is automatically cleaned up if it's older than 1 minute
+- Status data is automatically cleaned up if it's older than 30 minutes
 - The system keeps a maximum of 5 status updates per user per room
 - Timestamps are in milliseconds since epoch (Unix timestamp)

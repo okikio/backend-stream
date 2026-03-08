@@ -1,19 +1,19 @@
 generator client {
-  provider = "prisma-client-js"
-  output   = "../node_modules/.prisma/client"
+  provider     = "prisma-client"
+  output       = "../generated"
+  moduleFormat = "esm"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model bookmarks {
-  tmdb_id          String   @db.VarChar(255)
-  user_id          String   @db.VarChar(255)
-  meta             Json
-  updated_at       DateTime @db.Timestamptz(0)
-  group            String[]
+  tmdb_id           String   @db.VarChar(255)
+  user_id           String   @db.VarChar(255)
+  meta              Json
+  updated_at        DateTime @db.Timestamptz(0)
+  group             String[]
   favorite_episodes String[] @default([])
 
   @@id([tmdb_id, user_id])
@@ -26,6 +26,30 @@ model challenge_codes {
   auth_type  String   @db.VarChar(255)
   created_at DateTime @db.Timestamptz(0)
   expires_at DateTime @db.Timestamptz(0)
+}
+
+model list_items {
+  id       String   @id @db.Uuid
+  list_id  String   @db.Uuid
+  tmdb_id  String   @db.VarChar(255)
+  added_at DateTime @default(now()) @db.Timestamptz(0)
+  type     String?  @db.VarChar(255)
+  lists    lists    @relation(fields: [list_id], references: [id])
+
+  @@unique([list_id, tmdb_id], map: "list_items_list_id_tmdb_id_unique")
+}
+
+model lists {
+  id          String       @id @db.Uuid
+  user_id     String       @db.VarChar(255)
+  name        String       @db.VarChar(255)
+  description String?      @db.VarChar(255)
+  created_at  DateTime     @default(now()) @db.Timestamptz(0)
+  updated_at  DateTime     @db.Timestamptz(0)
+  public      Boolean      @default(false)
+  list_items  list_items[]
+
+  @@index([user_id], map: "lists_user_id_index")
 }
 
 model mikro_orm_migrations {
@@ -60,25 +84,50 @@ model sessions {
   user_agent  String
 }
 
+model user_group_order {
+  id          String   @id @db.Uuid
+  user_id     String   @unique(map: "user_group_order_user_id_unique") @db.VarChar(255)
+  group_order String[] @default([])
+  created_at  DateTime @default(now()) @db.Timestamptz(0)
+  updated_at  DateTime @default(now()) @db.Timestamptz(0)
+}
+
 model user_settings {
-  id                        String   @id
-  application_theme         String?  @db.VarChar(255)
-  application_language      String?  @db.VarChar(255)
-  default_subtitle_language String?  @db.VarChar(255)
-  proxy_urls                String[]
-  trakt_key                 String?  @db.VarChar(255)
-  febbox_key                String?  @db.VarChar(255)
-  enable_thumbnails         Boolean  @default(false)
-  enable_autoplay           Boolean  @default(true)
-  enable_skip_credits       Boolean  @default(true)
-  enable_discover           Boolean  @default(true)
-  enable_featured           Boolean  @default(false)
-  enable_details_modal      Boolean  @default(false)
-  enable_image_logos        Boolean  @default(true)
-  enable_carousel_view      Boolean  @default(false)
-  source_order              String[] @default([])
-  enable_source_order       Boolean  @default(false)
-  proxy_tmdb                Boolean  @default(false)
+  id                                   String   @id
+  application_theme                    String?  @db.VarChar(255)
+  custom_theme                         Json?
+  application_language                 String?  @db.VarChar(255)
+  default_subtitle_language            String?  @db.VarChar(255)
+  proxy_urls                           String[]
+  trakt_key                            String?  @db.VarChar(255)
+  febbox_key                           String?  @db.VarChar(255)
+  enable_autoplay                      Boolean  @default(true)
+  enable_carousel_view                 Boolean  @default(false)
+  enable_details_modal                 Boolean  @default(false)
+  enable_discover                      Boolean  @default(true)
+  enable_featured                      Boolean  @default(false)
+  enable_image_logos                   Boolean  @default(true)
+  enable_skip_credits                  Boolean  @default(true)
+  enable_source_order                  Boolean  @default(false)
+  enable_thumbnails                    Boolean  @default(false)
+  proxy_tmdb                           Boolean  @default(false)
+  source_order                         String[] @default([])
+  disabled_embeds                      String[] @default([])
+  disabled_sources                     String[] @default([])
+  embed_order                          String[] @default([])
+  enable_double_click_to_seek          Boolean  @default(false)
+  enable_embed_order                   Boolean  @default(false)
+  enable_hold_to_boost                 Boolean  @default(false)
+  enable_low_performance_mode          Boolean  @default(false)
+  enable_native_subtitles              Boolean  @default(false)
+  force_compact_episode_view           Boolean  @default(false)
+  home_section_order                   String[] @default([])
+  manual_source_selection              Boolean  @default(false)
+  debrid_service                       String?  @db.VarChar(255)
+  debrid_token                         String?  @db.VarChar(255)
+  enable_auto_resume_on_playback_error Boolean  @default(false)
+  tidb_key                             String?  @db.VarChar(255)
+  enable_pause_overlay                 Boolean  @default(false)
 }
 
 model users {
@@ -90,38 +139,23 @@ model users {
   permissions    String[]
   profile        Json
   ratings        Json      @default("[]")
+  nickname       String    @db.VarChar(255)
 }
 
-model lists {
-  id          String       @id @default(uuid()) @db.Uuid
-  user_id     String       @db.VarChar(255)
-  name        String       @db.VarChar(255)
-  description String?      @db.VarChar(255)
-  created_at  DateTime     @default(now()) @db.Timestamptz(0)
-  updated_at  DateTime     @updatedAt @db.Timestamptz(0)
-  public      Boolean      @default(false)
-  list_items  list_items[]
+model watch_history {
+  id             String   @id @db.Uuid
+  user_id        String   @db.VarChar(255)
+  tmdb_id        String   @db.VarChar(255)
+  season_id      String?  @db.VarChar(255)
+  episode_id     String?  @db.VarChar(255)
+  meta           Json
+  duration       Float
+  watched        Float
+  watched_at     DateTime @db.Timestamptz(0)
+  completed      Boolean  @default(false)
+  season_number  Int?
+  episode_number Int?
+  updated_at     DateTime @default(now()) @db.Timestamptz(0)
 
-  @@index([user_id], map: "lists_user_id_index")
-}
-
-model list_items {
-  id       String   @id @default(uuid()) @db.Uuid
-  list_id  String   @db.Uuid
-  tmdb_id  String   @db.VarChar(255)
-  added_at DateTime @default(now()) @db.Timestamptz(0)
-  type     String?  @db.VarChar(255)
-  list     lists    @relation(fields: [list_id], references: [id])
-
-  @@unique([list_id, tmdb_id], map: "list_items_list_id_tmdb_id_unique")
-}
-
-model user_group_order {
-  id        String   @id @default(uuid()) @db.Uuid
-  user_id   String   @db.VarChar(255)
-  group_order String[] @default([])
-  created_at DateTime @default(now()) @db.Timestamptz(0)
-  updated_at DateTime @updatedAt @db.Timestamptz(0)
-
-  @@unique([user_id], map: "user_group_order_user_id_unique")
+  @@unique([tmdb_id, user_id, season_id, episode_id], map: "watch_history_tmdb_id_user_id_season_id_episode_id_unique")
 }

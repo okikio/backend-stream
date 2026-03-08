@@ -1,0 +1,311 @@
+name: PR Test - Build and Integration Test
+
+on:
+  pull_request:
+    branches: [master]
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U testuser -d testdb"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Generate Prisma client
+        env:
+          DATABASE_URL: postgresql://testuser:testpassword@localhost:5432/testdb
+        run: npx prisma generate
+
+      - name: Run database migrations
+        env:
+          DATABASE_URL: postgresql://testuser:testpassword@localhost:5432/testdb
+        run: npx prisma migrate deploy
+
+      - name: Build the backend
+        env:
+          DATABASE_URL: postgresql://testuser:testpassword@localhost:5432/testdb
+          META_NAME: 'CI Backend Test server'
+          META_DESCRIPTION: 'CI Test Instance'
+          CRYPTO_SECRET: '0GwvbW7ZHlpZ6y0uSkU22Xi7XjoMpHX' # This is just for the CI server. DO NOT USE IN PROD
+        run: npm run build
+
+      - name: Start the backend server
+        env:
+          DATABASE_URL: postgresql://testuser:testpassword@localhost:5432/testdb
+          META_NAME: 'Test Backend'
+          META_DESCRIPTION: 'CI Test Instance'
+          CRYPTO_SECRET: '0GwvbW7ZHlpZ6y0uSkU22Xi7XjoMpHX'
+        run: |
+          node .output/server/index.mjs &
+          echo $! > server.pid
+          # Wait for server to be ready
+          for i in {1..30}; do
+            if curl -s http://localhost:3000 > /dev/null; then
+              echo "Server is ready!"
+              break
+            fi
+            echo "Waiting for server... attempt $i"
+            sleep 2
+          done
+
+      - name: Verify server is running
+        run: |
+          response=$(curl -s http://localhost:3000)
+          echo "Server response: $response"
+          if echo "$response" | grep -q "Backend is working"; then
+            echo "+------------------+------+"
+            echo "| Backend Working? | True |"
+            echo "+------------------+------+"
+
+          else
+            echo "+------------------+--------+"
+            echo "| Backend Working? | FAILED |"
+            echo "+------------------+--------+"
+            exit 1
+          fi
+
+      - name: Run account creation integration test
+        run: |
+          # Making sure this is installed cause it keeeps failing cause of this
+          # Create a Node.js script to handle the crypto operations
+          cat > auth-test.mjs << 'EOF'
+          import crypto from 'crypto';
+          import nacl from 'tweetnacl';
+
+          const TEST_MNEMONIC = "awkward safe differ large subway junk gallery flight left glue fault glory";
+
+          function toBase64Url(buffer) {
+            return Buffer.from(buffer)
+              .toString('base64')
+              .replace(/\+/g, '-')
+              .replace(/\//g, '_')
+              .replace(/=+$/g, '');
+          }
+
+          async function pbkdf2Async(password, salt, iterations, keyLen, digest) {
+            return new Promise((resolve, reject) => {
+              crypto.pbkdf2(password, salt, iterations, keyLen, digest, (err, derivedKey) => {
+                if (err) return reject(err);
+                resolve(new Uint8Array(derivedKey));
+              });
+            });
+          }
+
+          async function main() {
+            console.log("=== Step 1: Getting challenge code ===");
+            const challengeRes = await fetch('http://localhost:3000/auth/register/start', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({})
+            });
+            const challengeData = await challengeRes.json();
+            const challengeCode = challengeData.challenge;
+
+            if (!challengeCode) {
+              console.log("+----------------+-----------+");
+              console.log("| Challenge Code | NOT FOUND |");
+              console.log("+----------------+-----------+");
+              process.exit(1);
+            }
+            console.log("+----------------+-------+");
+            console.log("| Challenge Code | FOUND |");
+            console.log("+----------------+-------+");
+            console.log(`Challenge: ${challengeCode}`);
+
+            console.log("\n=== Step 2: Deriving keypair from mnemonic ===");
+            const seed = await pbkdf2Async(TEST_MNEMONIC, 'mnemonic', 2048, 32, 'sha256');
+            const keyPair = nacl.sign.keyPair.fromSeed(seed);
+            const publicKeyBase64Url = toBase64Url(keyPair.publicKey);
+            console.log(`Public Key: ${publicKeyBase64Url}`);
+            console.log("+------------+---------+");
+            console.log("| Public Key | DERIVED |");
+            console.log("+------------+---------+");
+
+            const messageBuffer = Buffer.from(challengeCode);
+            const signature = nacl.sign.detached(messageBuffer, keyPair.secretKey);
+            const signatureBase64Url = toBase64Url(signature);
+            console.log(`Signature: ${signatureBase64Url}`);
+            console.log("+------------------+--------+");
+            console.log("| Challenge Signed | SUCCESS |");
+            console.log("+------------------+--------+");
+
+            const registerRes = await fetch('http://localhost:3000/auth/register/complete', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'User-Agent': 'CI-Test-Agent/1.0'
+              },
+              body: JSON.stringify({
+                publicKey: publicKeyBase64Url,
+                challenge: {
+                  code: challengeCode,
+                  signature: signatureBase64Url
+                },
+                namespace: "ci-test",
+                device: "CI-Test-Device",
+                profile: {
+                  colorA: "#FF0000",
+                  colorB: "#00FF00",
+                  icon: "user"
+                }
+              })
+            });
+
+            const registerData = await registerRes.json();
+
+            if (registerData.user && registerData.token) {
+              console.log("+---------------+---------+");
+              console.log("| Registration  | SUCCESS |");
+              console.log("+---------------+---------+");
+              console.log(`User ID: ${registerData.user.id}`);
+              console.log(`Nickname: ${registerData.user.nickname}`);
+              console.log(`Token: ${registerData.token.substring(0, 50)}...`);
+
+              const meRes = await fetch('http://localhost:3000/users/@me', {
+                headers: {
+                  'Authorization': `Bearer ${registerData.token}`
+                }
+              });
+              const meData = await meRes.json();
+
+              if (meData.user && meData.user.id === registerData.user.id) {
+                console.log("+------------------+---------+");
+                console.log("| Auth Validation  | SUCCESS |");
+                console.log("+------------------+---------+");
+              } else {
+                console.log("+------------------+--------+");
+                console.log("| Auth Validation  | FAILED |");
+                console.log("+------------------+--------+");
+                process.exit(1);
+              }
+
+              const loginStartRes = await fetch('http://localhost:3000/auth/login/start', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ publicKey: publicKeyBase64Url })
+              });
+              const loginStartData = await loginStartRes.json();
+
+              if (loginStartData.challenge) {
+                const loginChallenge = loginStartData.challenge;
+                const loginSignature = nacl.sign.detached(Buffer.from(loginChallenge), keyPair.secretKey);
+                const loginSignatureBase64Url = toBase64Url(loginSignature);
+
+                const loginCompleteRes = await fetch('http://localhost:3000/auth/login/complete', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'CI-Test-Agent/1.0'
+                  },
+                  body: JSON.stringify({
+                    publicKey: publicKeyBase64Url,
+                    challenge: {
+                      code: loginChallenge,
+                      signature: loginSignatureBase64Url
+                    },
+                    device: "CI-Test-Device-Login"
+                  })
+                });
+
+                const loginData = await loginCompleteRes.json();
+
+                if (loginData.user && loginData.token) {
+                  console.log("+------------+---------+");
+                  console.log("| Login Flow | SUCCESS |");
+                  console.log("+------------+---------+");
+                } else {
+                  console.log("+------------+--------+");
+                  console.log("| Login Flow | FAILED |");
+                  console.log("+------------+--------+");
+                  console.log(JSON.stringify(loginData, null, 2));
+                  process.exit(1);
+                }
+              }
+
+            } else {
+              console.log("+---------------+--------+");
+              console.log("| Registration  | FAILED |");
+              console.log("+---------------+--------+");
+              console.log(JSON.stringify(registerData, null, 2));
+              process.exit(1);
+            }
+
+            console.log("\n+---------------------------+---------+");
+            console.log("| All Auth Tests Completed  | SUCCESS |");
+            console.log("+---------------------------+---------+");
+          }
+
+          main().catch(err => {
+            console.error("Test failed:", err);
+            process.exit(1);
+          });
+          EOF
+
+          node auth-test.mjs
+          rm auth-test.mjs
+
+
+      - name: Run API endpoint tests
+        run: |
+          echo "=== Testing /meta endpoint ==="
+          META_RESPONSE=$(curl -s http://localhost:3000/meta)
+          echo "Meta response: $META_RESPONSE"
+
+          if echo "$META_RESPONSE" | grep -q "name"; then
+            echo "+---------------+---------+"
+            echo "| Meta Endpoint | SUCCESS |"
+            echo "+---------------+---------+"
+          else
+            echo "+---------------+--------+"
+            echo "| Meta Endpoint | FAILED |"
+            echo "+---------------+--------+"
+            exit 1
+          fi
+
+          echo ""
+          echo "+-----------------------------+---------+"
+          echo "| All Integration Tests       | PASSED  |"
+          echo "+-----------------------------+---------+"
+
+      - name: Stop the server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then
+            kill $(cat server.pid) 2>/dev/null || true
+          fi
+
+      - name: Upload build artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: .output/
+          retention-days: 5

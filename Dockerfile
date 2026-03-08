@@ -1,68 +1,39 @@
-# syntax=docker/dockerfile:1
-# Base image with pnpm setup
-FROM node:24-alpine AS base
-
-# Enable pnpm via corepack (built into Node.js)
-RUN corepack enable pnpm
-
-# Install OpenSSL (required by Prisma on Alpine)
-RUN apk add --no-cache libc6-compat openssl
-
-ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
-
+FROM node:22-alpine
 WORKDIR /app
 
-# ============================================
-# Dependencies stage
-# ============================================
-FROM base AS deps
+# Install curl (for Coolify healthchecks) and openssl (required by Prisma on Alpine)
+RUN apk add --no-cache curl openssl
 
-# Copy dependency manifests
-COPY package.json pnpm-lock.yaml .npmrc ./
+# 1. Copy dependency files first to maximize Docker layer caching
+COPY package*.json ./
+RUN npm install
 
-# Copy Prisma schema to enable client generation
-COPY prisma ./prisma/
-
-# Install dependencies with frozen lockfile
-RUN pnpm install --frozen-lockfile
-
-# Generate Prisma Client for the Alpine environment
-RUN pnpm exec prisma generate
-
-# ============================================
-# Production runner stage
-# ============================================
-FROM base AS runner
-
-WORKDIR /app
-
-# Set production environment
-ENV NODE_ENV=production
-
-# Copy node_modules from deps stage
-COPY --from=deps /app/node_modules ./node_modules
-
-# Copy .npmrc to maintain pnpm configuration
-COPY --from=deps /app/.npmrc ./.npmrc
-
-# Copy Prisma schema (needed for migrations and generation at runtime)
-COPY --from=deps /app/prisma ./prisma
-
-# Copy application source
+# 2. Copy All folders for future proofing incase of custom setups later on
 COPY . .
 
-# Expose the application port
+# 3. Define build arguments (ARGs). 
+# These will be available for `prisma generate` and `npm run build`, 
+ARG DATABASE_URL=postgresql://CHANGETHISDONOTFOLLOWTHIS:5432/placeholder_db
+ARG META_NAME
+ARG META_DESCRIPTION
+ARG CRYPTO_SECRET
+ARG TMDB_API_KEY
+ARG CAPTCHA=false
+ARG CAPTCHA_CLIENT_KEY
+ARG TRAKT_CLIENT_ID
+ARG TRAKT_SECRET_ID
+
+# 4. Generate Prisma client using the build-only placeholder URL
+RUN DATABASE_URL=${DATABASE_URL} npx prisma generate
+
+# 5. Build the application (it will use the ARGs above during compilation)
+RUN npm run build
+
+# 6. Set ONLY the essential, safe runtime variable.
+ENV NODE_ENV=production
+
 EXPOSE 3000
 
-ENV PORT=3000
-ENV HOST=0.0.0.0
-
-# Build and start the Nitro server at runtime with environment variables
-# Copy Prisma with -L to follow symlinks and copy actual content
-CMD pnpm run build && \
-    mkdir -p .output/server/node_modules && \
-    cp -rL node_modules/.prisma .output/server/node_modules/ 2>/dev/null || true && \
-    cp -rL node_modules/@prisma .output/server/node_modules/ 2>/dev/null || true && \
-    cd .output/server && \
-    node index.mjs
+# Run migrations and start the server
+# Users MUST provide the real variables via Docker Run / Compose
+CMD ["sh", "-c", "npx prisma migrate deploy && node .output/server/index.mjs"]
