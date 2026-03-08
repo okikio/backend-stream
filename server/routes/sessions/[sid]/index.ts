@@ -36,19 +36,35 @@ export default defineEventHandler(async event => {
     const validated = updateSessionSchema.parse(body);
 
     if (validated.deviceName) {
-      await db.update(sessions).set({ device: validated.deviceName }).where(eq(sessions.id, sessionId!));
+      const [updated] = await db
+        .update(sessions)
+        .set({ device: validated.deviceName })
+        .where(eq(sessions.id, sessionId!))
+        .returning();
+
+      if (!updated) throw createError({ statusCode: 404, message: 'Session not found' });
+
+      return {
+        id: updated.id,
+        user: updated.user,
+        createdAt: updated.created_at,
+        accessedAt: updated.accessed_at,
+        expiresAt: updated.expires_at,
+        device: updated.device,
+        userAgent: updated.user_agent,
+        current: updated.id === currentSession.id,
+      };
     }
 
-    const [updated] = await db.select().from(sessions).where(eq(sessions.id, sessionId!)).limit(1);
     return {
-      id: updated.id,
-      user: updated.user,
-      createdAt: updated.created_at,
-      accessedAt: updated.accessed_at,
-      expiresAt: updated.expires_at,
-      device: updated.device,
-      userAgent: updated.user_agent,
-      current: updated.id === currentSession.id,
+      id: targetedSession.id,
+      user: targetedSession.user,
+      createdAt: targetedSession.created_at,
+      accessedAt: targetedSession.accessed_at,
+      expiresAt: targetedSession.expires_at,
+      device: targetedSession.device,
+      userAgent: targetedSession.user_agent,
+      current: targetedSession.id === currentSession.id,
     };
   }
 

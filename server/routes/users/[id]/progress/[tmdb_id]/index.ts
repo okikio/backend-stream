@@ -1,7 +1,7 @@
 import { useAuth } from '~/utils/auth';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
-import { db, progress_items, eq, and } from '~/utils/db';
+import { db, progress_items, eq, and, isNull } from '~/utils/db';
 
 const progressItemSchema = z.object({
   tmdbId: z.string(),
@@ -90,7 +90,8 @@ export default defineEventHandler(async event => {
         and(
           eq(progress_items.user_id, userId!),
           eq(progress_items.tmdb_id, tmdbId!),
-          seasonId ? eq(progress_items.season_id, seasonId) : eq(progress_items.tmdb_id, tmdbId!),
+          seasonId ? eq(progress_items.season_id, seasonId) : isNull(progress_items.season_id),
+          episodeId ? eq(progress_items.episode_id, episodeId) : isNull(progress_items.episode_id),
         ),
       )
       .returning();

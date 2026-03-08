@@ -138,12 +138,15 @@ export default defineEventHandler(async event => {
         .limit(1);
 
       if (!settings) {
-        // Return defaults when no settings row exists yet
-        const defaults = await db
-          .insert(user_settings)
-          .values({ id: userId! })
-          .returning();
-        return toResponse(defaults[0]);
+        // Insert a default row; if two concurrent GETs race, only one insert wins —
+        // the other gets nothing back but the row already exists so we re-select.
+        await db.insert(user_settings).values({ id: userId! }).onConflictDoNothing();
+        const [inserted] = await db
+          .select()
+          .from(user_settings)
+          .where(eq(user_settings.id, userId!))
+          .limit(1);
+        return toResponse(inserted);
       }
       return toResponse(settings);
     } catch (error) {

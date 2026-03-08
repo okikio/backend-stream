@@ -28,6 +28,11 @@ export default defineEventHandler(async event => {
   if (event.method === 'PUT') {
     const body = await readBody(event);
     const validated = watchHistorySchema.parse(body);
+
+    if (validated.tmdbId !== tmdbId) {
+      throw createError({ statusCode: 400, message: 'body.tmdbId must match the URL parameter' });
+    }
+
     const now = new Date();
 
     const seasonId = validated.seasonId ?? null;

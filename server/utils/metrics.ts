@@ -1,5 +1,5 @@
 import { Counter, register, collectDefaultMetrics, Histogram, Summary, Registry } from 'prom-client';
-import { db, users, count, sql } from './db';
+import { db, users, count } from './db';
 import { scopedLogger } from '~/utils/logger';
 import fs from 'fs';
 import path from 'path';
