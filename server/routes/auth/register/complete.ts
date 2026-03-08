@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import { useChallenge } from '~/utils/challenge';
 import { useAuth } from '~/utils/auth';
-import { randomUUID } from 'crypto';
+import { randomUUID } from 'node:crypto';
+import { generateRandomNickname } from '~/utils/nickname';
+import { db, users, eq } from '~/utils/db';
 
 const completeSchema = z.object({
   publicKey: z.string(),
@@ -23,10 +25,7 @@ export default defineEventHandler(async event => {
 
   const result = completeSchema.safeParse(body);
   if (!result.success) {
-    throw createError({
-      statusCode: 400,
-      message: 'Invalid request body',
-    });
+    throw createError({ statusCode: 400, message: 'Invalid request body' });
   }
 
   const challenge = useChallenge();
@@ -35,45 +34,48 @@ export default defineEventHandler(async event => {
     body.publicKey,
     body.challenge.signature,
     'registration',
-    'mnemonic'
+    'mnemonic',
   );
 
-  const existingUser = await prisma.users.findUnique({
-    where: { public_key: body.publicKey },
-  });
-
+  const [existingUser] = await db
+    .select()
+    .from(users)
+    .where(eq(users.public_key, body.publicKey))
+    .limit(1);
   if (existingUser) {
-    throw createError({
-      statusCode: 409,
-      message: 'A user with this public key already exists',
-    });
+    throw createError({ statusCode: 409, message: 'A user with this public key already exists' });
   }
 
   const userId = randomUUID();
   const now = new Date();
+  const nickname = generateRandomNickname();
 
-  const user = await prisma.users.create({
-    data: {
+  const [user] = await db
+    .insert(users)
+    .values({
       id: userId,
       namespace: body.namespace,
       public_key: body.publicKey,
+      nickname,
       created_at: now,
       last_logged_in: now,
       permissions: [],
       profile: body.profile,
-    },
-  });
+      ratings: [],
+    })
+    .returning();
 
   const auth = useAuth();
   const userAgent = getRequestHeader(event, 'user-agent');
   const session = await auth.makeSession(user.id, body.device, userAgent);
-  const token = auth.makeSessionToken(session);
+  const token = await auth.makeSessionToken(session);
 
   return {
     user: {
       id: user.id,
       publicKey: user.public_key,
       namespace: user.namespace,
+      nickname: user.nickname,
       profile: user.profile,
       permissions: user.permissions,
     },

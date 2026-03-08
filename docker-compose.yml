@@ -1,22 +1,18 @@
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgres:16-alpine
     restart: unless-stopped
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U $$PG_USER -d $$PG_DB']
+      test: ['CMD-SHELL', 'pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB']
       interval: 5s
       retries: 10
       timeout: 2s
     environment:
-      - POSTGRES_USER=${PG_USER}
-      - POSTGRES_PASSWORD=${PG_PASSWORD}
-      - POSTGRES_DB=${PG_DB}
+      POSTGRES_USER: ${PG_USER}
+      POSTGRES_PASSWORD: ${PG_PASSWORD}
+      POSTGRES_DB: ${PG_DB}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-    env_file:
-      - .env
-    ports:
-      - '5432:5432'
     networks:
       - p-stream-network
 
@@ -28,10 +24,10 @@ services:
       META_NAME: ${META_NAME}
       META_DESCRIPTION: ${META_DESCRIPTION}
       CRYPTO_SECRET: ${CRYPTO_SECRET:?crypto secret required}
-      TMDB_API_KEY: ${TMDB_API_KEY:?TMDB API key required}
-      TRAKT_CLIENT_ID: ${TRAKT_CLIENT_ID:?Trakt client ID required}
-      TRAKT_SECRET_ID: ${TRAKT_SECRET_ID:?Trakt secret ID required}
-      CAPTCHA: ${CAPTCHA}
+      TMDB_API_KEY: ${TMDB_API_KEY}
+      TRAKT_CLIENT_ID: ${TRAKT_CLIENT_ID}
+      TRAKT_SECRET_ID: ${TRAKT_SECRET_ID}
+      CAPTCHA: ${CAPTCHA:-false}
       CAPTCHA_CLIENT_KEY: ${CAPTCHA_CLIENT_KEY}
       NODE_ENV: ${NODE_ENV:-production}
     env_file:

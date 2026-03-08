@@ -1,0 +1,100 @@
+name: PR Test – Build and Integration Test
+
+on:
+  pull_request:
+    branches: [master]
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpassword
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U testuser -d testdb"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run database migrations
+        env:
+          DATABASE_URL: postgresql://testuser:testpassword@localhost:5432/testdb
+        run: node scripts/migrate.mjs
+
+      - name: Build the backend
+        env:
+          DATABASE_URL: postgresql://testuser:testpassword@localhost:5432/testdb
+          META_NAME: 'CI Backend Test server'
+          META_DESCRIPTION: 'CI Test Instance'
+          CRYPTO_SECRET: '0GwvbW7ZHlpZ6y0uSkU22Xi7XjoMpHX'
+        run: npm run build
+
+      - name: Start the backend server
+        env:
+          DATABASE_URL: postgresql://testuser:testpassword@localhost:5432/testdb
+          META_NAME: 'Test Backend'
+          META_DESCRIPTION: 'CI Test Instance'
+          CRYPTO_SECRET: '0GwvbW7ZHlpZ6y0uSkU22Xi7XjoMpHX'
+        run: |
+          node .output/server/index.mjs &
+          echo $! > server.pid
+          for i in {1..30}; do
+            if curl -sf http://localhost:3000 > /dev/null 2>&1; then
+              echo "Server is ready!"
+              break
+            fi
+            echo "Waiting for server... attempt $i"
+            sleep 2
+          done
+
+      - name: Verify server is running
+        run: |
+          response=$(curl -s http://localhost:3000)
+          echo "Server response: $response"
+          if echo "$response" | grep -q "Backend is working"; then
+            echo "✅ Backend is working"
+          else
+            echo "❌ Backend check FAILED"
+            exit 1
+          fi
+
+      - name: Run integration tests
+        run: node tests/integration.mjs http://localhost:3000
+
+      - name: Stop the server
+        if: always()
+        run: |
+          if [ -f server.pid ]; then
+            kill $(cat server.pid) 2>/dev/null || true
+          fi
+
+      - name: Upload build artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-output
+          path: .output/
+          retention-days: 5

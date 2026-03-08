@@ -10,16 +10,10 @@ export default defineEventHandler(async event => {
 
   const result = startSchema.safeParse(body);
   if (!result.success) {
-    throw createError({
-      statusCode: 400,
-      message: 'Invalid request body',
-    });
+    throw createError({ statusCode: 400, message: 'Invalid request body' });
   }
 
   const challenge = useChallenge();
   const challengeCode = await challenge.createChallengeCode('registration', 'mnemonic');
-
-  return {
-    challenge: challengeCode.code,
-  };
+  return { challenge: challengeCode.code };
 });

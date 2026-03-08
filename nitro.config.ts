@@ -1,5 +1,3 @@
-import { config } from 'dotenv';
-config();
 import { version } from './server/utils/config';
 //https://nitro.unjs.io/config
 export default defineNitroConfig({
@@ -8,9 +6,6 @@ export default defineNitroConfig({
   experimental: {
     asyncContext: true,
     tasks: true,
-  },
-  rollupConfig: {
-    external: ['@prisma/client', '.prisma/client'],
   },
   scheduledTasks: {
     // Daily cron jobs (midnight)

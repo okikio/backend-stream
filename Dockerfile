@@ -1,68 +1,78 @@
-# syntax=docker/dockerfile:1
-# Base image with pnpm setup
-FROM node:24-alpine AS base
-
-# Enable pnpm via corepack (built into Node.js)
-RUN corepack enable pnpm
-
-# Install OpenSSL (required by Prisma on Alpine)
-RUN apk add --no-cache libc6-compat openssl
-
-ENV PNPM_HOME="/pnpm"
-ENV PATH="$PNPM_HOME:$PATH"
-
+# syntax=docker/dockerfile:1.9
+# ─────────────────────────────────────────────────────────────
+# Multi-stage build: dependencies → build → production runtime
+# ─────────────────────────────────────────────────────────────
+FROM node:22-alpine AS deps
 WORKDIR /app
 
-# ============================================
-# Dependencies stage
-# ============================================
-FROM base AS deps
+# Install curl for healthchecks
+RUN apk add --no-cache curl
 
-# Copy dependency manifests
-COPY package.json pnpm-lock.yaml .npmrc ./
+COPY package*.json ./
+# Use npm ci for reproducible installs; omit dev dependencies in prod layer
+RUN npm ci --ignore-scripts
 
-# Copy Prisma schema to enable client generation
-COPY prisma ./prisma/
-
-# Install dependencies with frozen lockfile
-RUN pnpm install --frozen-lockfile
-
-# Generate Prisma Client for the Alpine environment
-RUN pnpm exec prisma generate
-
-# ============================================
-# Production runner stage
-# ============================================
-FROM base AS runner
-
+# ─── build stage ──────────────────────────────────────────────
+FROM node:22-alpine AS builder
 WORKDIR /app
 
-# Set production environment
-ENV NODE_ENV=production
-
-# Copy node_modules from deps stage
 COPY --from=deps /app/node_modules ./node_modules
-
-# Copy .npmrc to maintain pnpm configuration
-COPY --from=deps /app/.npmrc ./.npmrc
-
-# Copy Prisma schema (needed for migrations and generation at runtime)
-COPY --from=deps /app/prisma ./prisma
-
-# Copy application source
 COPY . .
 
-# Expose the application port
+# Build arguments used during the build step (not baked into the final image)
+ARG META_NAME
+ARG META_DESCRIPTION
+# CAPTCHA is feature-flagged; CAPTCHA_CLIENT_KEY is a public browser-facing site key
+ARG CAPTCHA=false
+ARG CAPTCHA_CLIENT_KEY
+
+ENV META_NAME=${META_NAME} \
+    META_DESCRIPTION=${META_DESCRIPTION} \
+    CAPTCHA=${CAPTCHA} \
+    CAPTCHA_CLIENT_KEY=${CAPTCHA_CLIENT_KEY}
+
+RUN npm run build
+
+# ─── production image ─────────────────────────────────────────
+FROM node:22-alpine AS runner
+WORKDIR /app
+
+# Install curl for Coolify / health-check probes
+RUN apk add --no-cache curl
+
+ENV NODE_ENV=production
+
+# Copy compiled output and runtime dependencies
+COPY --from=builder /app/.output ./.output
+COPY --from=deps    /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+
+# Copy migration files and the migration runner script
+COPY --from=builder /app/drizzle ./drizzle
+COPY --from=builder /app/scripts ./scripts
+
+# OCI / Docker Hub image labels (populated by docker/metadata-action)
+ARG LABEL_CREATED
+ARG LABEL_VERSION
+ARG LABEL_REVISION
+LABEL org.opencontainers.image.created="${LABEL_CREATED}" \
+      org.opencontainers.image.version="${LABEL_VERSION}" \
+      org.opencontainers.image.revision="${LABEL_REVISION}" \
+      org.opencontainers.image.source="https://github.com/okikio/backend-stream" \
+      org.opencontainers.image.title="p-stream backend" \
+      org.opencontainers.image.description="Self-hostable movie/TV streaming backend"
+
 EXPOSE 3000
 
-ENV PORT=3000
-ENV HOST=0.0.0.0
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD curl -sf http://localhost:3000/ || exit 1
 
-# Build and start the Nitro server at runtime with environment variables
-# Copy Prisma with -L to follow symlinks and copy actual content
-CMD pnpm run build && \
-    mkdir -p .output/server/node_modules && \
-    cp -rL node_modules/.prisma .output/server/node_modules/ 2>/dev/null || true && \
-    cp -rL node_modules/@prisma .output/server/node_modules/ 2>/dev/null || true && \
-    cd .output/server && \
-    node index.mjs
+# Runtime secrets are supplied via Docker secrets or environment variables.
+# Required at runtime: DATABASE_URL, CRYPTO_SECRET
+# Optional:           META_NAME, META_DESCRIPTION, TMDB_API_KEY,
+#                     CAPTCHA, CAPTCHA_CLIENT_KEY, TRAKT_CLIENT_ID, TRAKT_SECRET_ID
+#
+# Docker secret support: mount DATABASE_URL as /run/secrets/database_url
+# and CRYPTO_SECRET as /run/secrets/crypto_secret, then set the env vars
+# to reference them, e.g. via a wrapper entrypoint.
+CMD ["sh", "-c", "node scripts/migrate.mjs && node .output/server/index.mjs"]

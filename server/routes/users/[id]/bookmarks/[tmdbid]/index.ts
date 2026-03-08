@@ -1,149 +1,70 @@
 import { useAuth } from '~/utils/auth';
 import { z } from 'zod';
-import { scopedLogger } from '~/utils/logger';
+import { db, bookmarks, eq, and } from '~/utils/db';
 
-interface BookmarkWithFavorites {
-  tmdb_id: string;
-  user_id: string;
-  meta: any;
-  group: string[];
-  favorite_episodes: string[];
-  updated_at: Date;
-}
-
-const log = scopedLogger('user-bookmarks');
-
-const bookmarkMetaSchema = z.object({
-  title: z.string(),
-  year: z.number(),
-  poster: z.string().optional(),
-  type: z.enum(['movie', 'show']),
-});
-
-// Support both formats: direct fields or nested under meta
-const bookmarkRequestSchema = z.object({
-  meta: bookmarkMetaSchema.optional(),
-  tmdbId: z.string().optional(),
+const bookmarkDataSchema = z.object({
+  meta: z.object({
+    title: z.string(),
+    year: z.number().optional(),
+    poster: z.string().optional(),
+    type: z.enum(['movie', 'show']),
+  }),
   group: z.union([z.string(), z.array(z.string())]).optional(),
   favoriteEpisodes: z.array(z.string()).optional(),
 });
 
 export default defineEventHandler(async event => {
-  const userId = getRouterParam(event, 'id');
-  const tmdbId = getRouterParam(event, 'tmdbid');
-
+  const userId = event.context.params?.id;
+  const tmdbId = event.context.params?.tmdbid;
   const session = await useAuth().getCurrentSession();
 
   if (session.user !== userId) {
-    throw createError({
-      statusCode: 403,
-      message: 'Cannot access bookmarks for other users',
-    });
+    throw createError({ statusCode: 403, message: 'Cannot access other user information' });
+  }
+
+  const where = and(eq(bookmarks.tmdb_id, tmdbId!), eq(bookmarks.user_id, userId!));
+
+  if (event.method === 'GET') {
+    const [bm] = await db.select().from(bookmarks).where(where).limit(1);
+    if (!bm) throw createError({ statusCode: 404, message: 'Bookmark not found' });
+    return { tmdbId: bm.tmdb_id, meta: bm.meta, group: bm.group, favoriteEpisodes: bm.favorite_episodes };
   }
 
   if (event.method === 'POST') {
-    try {
-      const body = await readBody(event);
-      log.info('Creating bookmark', { userId, tmdbId, body });
+    const body = await readBody(event);
+    const validated = bookmarkDataSchema.parse(body);
+    const normalizedGroup = validated.group
+      ? Array.isArray(validated.group) ? validated.group : [validated.group]
+      : [];
+    const now = new Date();
 
-      // Parse and validate the request body
-      const validatedRequest = bookmarkRequestSchema.parse(body);
-
-      // Extract the meta data - either directly from meta field or from the root
-      const metaData = validatedRequest.meta || body;
-
-      // Validate the meta data separately
-      const validatedMeta = bookmarkMetaSchema.parse(metaData);
-
-      // Extract group from the validated request
-      const groupFromBody = validatedRequest.group;
-
-      // Normalize group to always be an array if present
-      const normalizedGroup = groupFromBody 
-        ? (Array.isArray(groupFromBody) ? groupFromBody : [groupFromBody])
-        : [];
-
-      // Normalize favoriteEpisodes to always be an array
-      const normalizedFavoriteEpisodes = validatedRequest.favoriteEpisodes || [];
-
-      const bookmark = await prisma.bookmarks.upsert({
-        where: {
-          tmdb_id_user_id: {
-            tmdb_id: tmdbId,
-            user_id: session.user,
-          },
-        },
-        update: {
-          meta: validatedMeta,
+    const [bm] = await db
+      .insert(bookmarks)
+      .values({
+        tmdb_id: tmdbId!,
+        user_id: userId!,
+        meta: validated.meta,
+        group: normalizedGroup,
+        favorite_episodes: validated.favoriteEpisodes ?? [],
+        updated_at: now,
+      })
+      .onConflictDoUpdate({
+        target: [bookmarks.tmdb_id, bookmarks.user_id],
+        set: {
+          meta: validated.meta,
           group: normalizedGroup,
-          favorite_episodes: normalizedFavoriteEpisodes,
-          updated_at: new Date(),
-        } as any,
-        create: {
-          user_id: session.user,
-          tmdb_id: tmdbId,
-          meta: validatedMeta,
-          group: normalizedGroup,
-          favorite_episodes: normalizedFavoriteEpisodes,
-          updated_at: new Date(),
-        } as any,
-      }) as BookmarkWithFavorites;
-
-      log.info('Bookmark created successfully', { userId, tmdbId });
-
-      return {
-        tmdbId: bookmark.tmdb_id,
-        meta: bookmark.meta,
-        group: bookmark.group,
-        favoriteEpisodes: bookmark.favorite_episodes,
-        updatedAt: bookmark.updated_at,
-      };
-    } catch (error) {
-      log.error('Failed to create bookmark', {
-        userId,
-        tmdbId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-
-      if (error instanceof z.ZodError) {
-        throw createError({
-          statusCode: 400,
-          message: JSON.stringify(error.errors, null, 2),
-        });
-      }
-
-      throw error;
-    }
-  } else if (event.method === 'DELETE') {
-    log.info('Deleting bookmark', { userId, tmdbId });
-
-    try {
-      await prisma.bookmarks.delete({
-        where: {
-          tmdb_id_user_id: {
-            tmdb_id: tmdbId,
-            user_id: session.user,
-          },
+          favorite_episodes: validated.favoriteEpisodes ?? [],
+          updated_at: now,
         },
-      });
-
-      log.info('Bookmark deleted successfully', { userId, tmdbId });
-
-      return { success: true, tmdbId };
-    } catch (error) {
-      log.error('Failed to delete bookmark', {
-        userId,
-        tmdbId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-
-      // If bookmark doesn't exist, still return success
-      return { success: true, tmdbId };
-    }
+      })
+      .returning();
+    return { tmdbId: bm.tmdb_id, meta: bm.meta, group: bm.group, favoriteEpisodes: bm.favorite_episodes };
   }
 
-  throw createError({
-    statusCode: 405,
-    message: 'Method not allowed',
-  });
+  if (event.method === 'DELETE') {
+    await db.delete(bookmarks).where(where);
+    return { success: true };
+  }
+
+  throw createError({ statusCode: 405, message: 'Method not allowed' });
 });

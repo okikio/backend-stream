@@ -1,20 +1,22 @@
-import { prisma } from './prisma';
-import jwt from 'jsonwebtoken';
-const { sign, verify } = jwt;
-import { randomUUID } from 'crypto';
+import { SignJWT, jwtVerify } from 'jose';
+import { randomUUID } from 'node:crypto';
+import { db, sessions, eq } from './db';
 
 // 21 days in ms
 const SESSION_EXPIRY_MS = 21 * 24 * 60 * 60 * 1000;
 
+function getSecret(): Uint8Array {
+  const runtimeConfig = useRuntimeConfig();
+  const cryptoSecret = (runtimeConfig.cryptoSecret as string) || process.env.CRYPTO_SECRET;
+  if (!cryptoSecret) throw new Error('CRYPTO_SECRET environment variable is not set');
+  return new TextEncoder().encode(cryptoSecret);
+}
+
 export function useAuth() {
   const getSession = async (id: string) => {
-    const session = await prisma.sessions.findUnique({
-      where: { id },
-    });
-
+    const [session] = await db.select().from(sessions).where(eq(sessions.id, id)).limit(1);
     if (!session) return null;
     if (new Date(session.expires_at) < new Date()) return null;
-
     return session;
   };
 
@@ -25,13 +27,12 @@ export function useAuth() {
     const now = new Date();
     const expiryDate = new Date(now.getTime() + SESSION_EXPIRY_MS);
 
-    return await prisma.sessions.update({
-      where: { id },
-      data: {
-        accessed_at: now,
-        expires_at: expiryDate,
-      },
-    });
+    const [updated] = await db
+      .update(sessions)
+      .set({ accessed_at: now, expires_at: expiryDate })
+      .where(eq(sessions.id, id))
+      .returning();
+    return updated ?? null;
   };
 
   const makeSession = async (user: string, device: string, userAgent?: string) => {
@@ -40,8 +41,9 @@ export function useAuth() {
     const now = new Date();
     const expiryDate = new Date(now.getTime() + SESSION_EXPIRY_MS);
 
-    return await prisma.sessions.create({
-      data: {
+    const [session] = await db
+      .insert(sessions)
+      .values({
         id: randomUUID(),
         user,
         device,
@@ -49,44 +51,21 @@ export function useAuth() {
         created_at: now,
         accessed_at: now,
         expires_at: expiryDate,
-      },
-    });
+      })
+      .returning();
+    return session;
   };
 
-  const makeSessionToken = (session: { id: string }) => {
-    const runtimeConfig = useRuntimeConfig();
-    const cryptoSecret = runtimeConfig.cryptoSecret || process.env.CRYPTO_SECRET;
-    
-    if (!cryptoSecret) {
-      console.error('CRYPTO_SECRET is missing from both runtime config and environment');
-      console.error('Available runtime config keys:', Object.keys(runtimeConfig));
-      console.error('Environment variables:', {
-        CRYPTO_SECRET: process.env.CRYPTO_SECRET ? 'SET' : 'NOT SET',
-        NODE_ENV: process.env.NODE_ENV,
-      });
-      throw new Error('CRYPTO_SECRET environment variable is not set');
-    }
-    
-    return sign({ sid: session.id }, cryptoSecret, {
-      algorithm: 'HS256',
-    });
+  const makeSessionToken = async (session: { id: string }): Promise<string> => {
+    return new SignJWT({ sid: session.id })
+      .setProtectedHeader({ alg: 'HS256' })
+      .sign(getSecret());
   };
 
-  const verifySessionToken = (token: string) => {
+  const verifySessionToken = async (token: string): Promise<{ sid: string } | null> => {
     try {
-      const runtimeConfig = useRuntimeConfig();
-      const cryptoSecret = runtimeConfig.cryptoSecret || process.env.CRYPTO_SECRET;
-      
-      if (!cryptoSecret) {
-        console.error('CRYPTO_SECRET is missing for token verification');
-        return null;
-      }
-      
-      const payload = verify(token, cryptoSecret, {
-        algorithms: ['HS256'],
-      });
-
-      if (typeof payload === 'string') return null;
+      const { payload } = await jwtVerify(token, getSecret(), { algorithms: ['HS256'] });
+      if (typeof payload.sid !== 'string') return null;
       return payload as { sid: string };
     } catch {
       return null;
@@ -96,28 +75,19 @@ export function useAuth() {
   const getCurrentSession = async () => {
     const event = useEvent();
     const authHeader = getRequestHeader(event, 'authorization');
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      throw createError({
-        statusCode: 401,
-        message: 'Unauthorized',
-      });
+    if (!authHeader?.startsWith('Bearer ')) {
+      throw createError({ statusCode: 401, message: 'Unauthorized' });
     }
 
-    const token = authHeader.split(' ')[1];
-    const payload = verifySessionToken(token);
+    const token = authHeader.slice(7);
+    const payload = await verifySessionToken(token);
     if (!payload) {
-      throw createError({
-        statusCode: 401,
-        message: 'Invalid token',
-      });
+      throw createError({ statusCode: 401, message: 'Invalid token' });
     }
 
     const session = await getSessionAndBump(payload.sid);
     if (!session) {
-      throw createError({
-        statusCode: 401,
-        message: 'Session not found or expired',
-      });
+      throw createError({ statusCode: 401, message: 'Session not found or expired' });
     }
 
     return session;

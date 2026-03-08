@@ -1,5 +1,6 @@
 import { useAuth } from '~/utils/auth';
 import { z } from 'zod';
+import { db, sessions, eq } from '~/utils/db';
 
 const updateSessionSchema = z.object({
   deviceName: z.string().max(500).min(1).optional(),
@@ -7,22 +8,17 @@ const updateSessionSchema = z.object({
 
 export default defineEventHandler(async event => {
   const sessionId = getRouterParam(event, 'sid');
-
   const currentSession = await useAuth().getCurrentSession();
 
-  const targetedSession = await prisma.sessions.findUnique({
-    where: { id: sessionId },
-  });
+  const [targetedSession] = await db
+    .select()
+    .from(sessions)
+    .where(eq(sessions.id, sessionId!))
+    .limit(1);
 
   if (!targetedSession) {
-    if (event.method === 'DELETE') {
-      return { id: sessionId };
-    }
-
-    throw createError({
-      statusCode: 404,
-      message: 'Session cannot be found',
-    });
+    if (event.method === 'DELETE') return { id: sessionId };
+    throw createError({ statusCode: 404, message: 'Session cannot be found' });
   }
 
   if (targetedSession.user !== currentSession.user) {
@@ -37,53 +33,45 @@ export default defineEventHandler(async event => {
 
   if (event.method === 'PATCH') {
     const body = await readBody(event);
-    const validatedBody = updateSessionSchema.parse(body);
+    const validated = updateSessionSchema.parse(body);
 
-    if (validatedBody.deviceName) {
-      await prisma.sessions.update({
-        where: { id: sessionId },
-        data: {
-          device: validatedBody.deviceName,
-        },
-      });
+    if (validated.deviceName) {
+      const [updated] = await db
+        .update(sessions)
+        .set({ device: validated.deviceName })
+        .where(eq(sessions.id, sessionId!))
+        .returning();
+
+      if (!updated) throw createError({ statusCode: 404, message: 'Session not found' });
+
+      return {
+        id: updated.id,
+        user: updated.user,
+        createdAt: updated.created_at,
+        accessedAt: updated.accessed_at,
+        expiresAt: updated.expires_at,
+        device: updated.device,
+        userAgent: updated.user_agent,
+        current: updated.id === currentSession.id,
+      };
     }
 
-    const updatedSession = await prisma.sessions.findUnique({
-      where: { id: sessionId },
-    });
-
     return {
-      id: updatedSession.id,
-      user: updatedSession.user,
-      createdAt: updatedSession.created_at,
-      accessedAt: updatedSession.accessed_at,
-      expiresAt: updatedSession.expires_at,
-      device: updatedSession.device,
-      userAgent: updatedSession.user_agent,
-      current: updatedSession.id === currentSession.id,
+      id: targetedSession.id,
+      user: targetedSession.user,
+      createdAt: targetedSession.created_at,
+      accessedAt: targetedSession.accessed_at,
+      expiresAt: targetedSession.expires_at,
+      device: targetedSession.device,
+      userAgent: targetedSession.user_agent,
+      current: targetedSession.id === currentSession.id,
     };
   }
 
   if (event.method === 'DELETE') {
-    const sid = event.context.params?.sid;
-    const sessionExists = await prisma.sessions.findUnique({
-      where: { id: sid },
-    });
-
-    if (!sessionExists) {
-      return { success: true };
-    }
-    const session = await useAuth().getSessionAndBump(sid);
-
-    await prisma.sessions.delete({
-      where: { id: sessionId },
-    });
-
+    await db.delete(sessions).where(eq(sessions.id, sessionId!));
     return { id: sessionId };
   }
 
-  throw createError({
-    statusCode: 405,
-    message: 'Method not allowed',
-  });
+  throw createError({ statusCode: 405, message: 'Method not allowed' });
 });

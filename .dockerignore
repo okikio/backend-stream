@@ -1,0 +1,60 @@
+# VCS
+.git
+.gitignore
+.gitattributes
+.github/
+
+# Dependencies (installed fresh in Docker)
+node_modules/
+.npm/
+.yarn/
+
+# Build output / caches
+.output/
+dist/
+build/
+coverage/
+.cache/
+.nitro/
+*.tsbuildinfo
+
+# Tests
+tests/
+
+# Local env / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Logs / metrics state
+logs/
+*.log
+.metrics*.json
+
+# Local DB
+*.sqlite
+*.sqlite3
+*.db
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Documentation
+README.md
+LICENSE
+
+# Dev tooling
+.eslintrc.json
+.prettierrc
+.npmrc
+examples/
+
+# Dev-only config files (not needed in image)
+nixpacks.toml
+railpack.json

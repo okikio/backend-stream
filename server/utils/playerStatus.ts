@@ -30,8 +30,8 @@ export interface PlayerStatus {
 // Key: userId+roomCode, Value: Status data array
 export const playerStatusStore = new Map<string, Array<PlayerStatus>>();
 
-// Cleanup interval (1 minute in milliseconds)
-export const CLEANUP_INTERVAL = 1 * 60 * 1000;
+// Cleanup interval (30 minutes in milliseconds)
+export const CLEANUP_INTERVAL = 30 * 60 * 1000;
 
 // Clean up old status entries
 function cleanupOldStatuses() {
@@ -48,5 +48,5 @@ function cleanupOldStatuses() {
   }
 }
 
-// Schedule cleanup every 1 minute
-setInterval(cleanupOldStatuses, 1 * 60 * 1000);
+// Schedule cleanup every 5 minutes
+setInterval(cleanupOldStatuses, 5 * 60 * 1000);

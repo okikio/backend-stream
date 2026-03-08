@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { useChallenge } from '~/utils/challenge';
 import { useAuth } from '~/utils/auth';
+import { db, users, eq } from '~/utils/db';
 
 const completeSchema = z.object({
   publicKey: z.string(),
@@ -16,10 +17,7 @@ export default defineEventHandler(async event => {
 
   const result = completeSchema.safeParse(body);
   if (!result.success) {
-    throw createError({
-      statusCode: 400,
-      message: 'Invalid request body',
-    });
+    throw createError({ statusCode: 400, message: 'Invalid request body' });
   }
 
   const challenge = useChallenge();
@@ -28,35 +26,31 @@ export default defineEventHandler(async event => {
     body.publicKey,
     body.challenge.signature,
     'login',
-    'mnemonic'
+    'mnemonic',
   );
 
-  const user = await prisma.users.findUnique({
-    where: { public_key: body.publicKey },
-  });
-
+  const [user] = await db
+    .select()
+    .from(users)
+    .where(eq(users.public_key, body.publicKey))
+    .limit(1);
   if (!user) {
-    throw createError({
-      statusCode: 401,
-      message: 'User cannot be found',
-    });
+    throw createError({ statusCode: 401, message: 'User cannot be found' });
   }
 
-  await prisma.users.update({
-    where: { id: user.id },
-    data: { last_logged_in: new Date() },
-  });
+  await db.update(users).set({ last_logged_in: new Date() }).where(eq(users.id, user.id));
 
   const auth = useAuth();
   const userAgent = getRequestHeader(event, 'user-agent') || '';
   const session = await auth.makeSession(user.id, body.device, userAgent);
-  const token = auth.makeSessionToken(session);
+  const token = await auth.makeSessionToken(session);
 
   return {
     user: {
       id: user.id,
       publicKey: user.public_key,
       namespace: user.namespace,
+      nickname: user.nickname,
       profile: user.profile,
       permissions: user.permissions,
     },

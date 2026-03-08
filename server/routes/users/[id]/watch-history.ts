@@ -1,5 +1,5 @@
 import { useAuth } from '~/utils/auth';
-import { db, progress_items, eq } from '~/utils/db';
+import { db, watch_history, eq } from '~/utils/db';
 
 export default defineEventHandler(async event => {
   const userId = event.context.params?.id;
@@ -12,19 +12,20 @@ export default defineEventHandler(async event => {
   if (event.method === 'GET') {
     const items = await db
       .select()
-      .from(progress_items)
-      .where(eq(progress_items.user_id, userId!));
+      .from(watch_history)
+      .where(eq(watch_history.user_id, userId!));
 
-    return items.map(p => ({
-      tmdbId: p.tmdb_id,
-      seasonId: p.season_id,
-      episodeId: p.episode_id,
-      seasonNumber: p.season_number,
-      episodeNumber: p.episode_number,
-      meta: p.meta,
-      duration: Number(p.duration),
-      watched: Number(p.watched),
-      updatedAt: p.updated_at,
+    return items.map(h => ({
+      tmdbId: h.tmdb_id,
+      meta: h.meta,
+      duration: h.duration,
+      watched: h.watched,
+      watchedAt: h.watched_at,
+      completed: h.completed,
+      seasonId: h.season_id || undefined,
+      episodeId: h.episode_id || undefined,
+      seasonNumber: h.season_number,
+      episodeNumber: h.episode_number,
     }));
   }
 

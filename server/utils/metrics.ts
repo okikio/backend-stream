@@ -1,5 +1,5 @@
 import { Counter, register, collectDefaultMetrics, Histogram, Summary, Registry } from 'prom-client';
-import { prisma } from './prisma';
+import { db, users, count } from './db';
 import { scopedLogger } from '~/utils/logger';
 import fs from 'fs';
 import path from 'path';
@@ -10,23 +10,15 @@ const METRICS_DAILY_FILE = '.metrics_daily.json';
 const METRICS_WEEKLY_FILE = '.metrics_weekly.json';
 const METRICS_MONTHLY_FILE = '.metrics_monthly.json';
 
-/**
- * Get the filename for storing metrics based on the interval
- * @param interval - The metrics interval ('default', 'daily', 'weekly', 'monthly')
- * @returns The filename for the metrics file
- */
-function getMetricsFileName(interval: string = 'default'): string {
-  switch (interval) {
-    case 'daily':
-      return METRICS_DAILY_FILE;
-    case 'weekly':
-      return METRICS_WEEKLY_FILE;
-    case 'monthly':
-      return METRICS_MONTHLY_FILE;
-    case 'default':
-    default:
-      return METRICS_FILE;
-  }
+function getMetricsFileName(interval: string): string {
+  const fileMap: Record<string, string> = {
+    default: METRICS_FILE,
+    daily: METRICS_DAILY_FILE,
+    weekly: METRICS_WEEKLY_FILE,
+    monthly: METRICS_MONTHLY_FILE,
+  };
+  const name = fileMap[interval] ?? `.metrics_${interval}.json`;
+  return path.join(process.cwd(), name);
 }
 
 // Global registries
@@ -339,12 +331,12 @@ async function updateMetrics(interval: 'default' | 'daily' | 'weekly' | 'monthly
     }
     log.info(`Fetching users from database for ${interval} metrics...`, { evt: 'update_metrics_start', interval });
 
-    const users = await prisma.users.groupBy({
-      by: ['namespace'],
-      _count: true,
-    });
+    const namespaceGroups = await db
+      .select({ namespace: users.namespace, _count: count() })
+      .from(users)
+      .groupBy(users.namespace);
 
-    log.info('Found users', { evt: 'users_found', count: users.length, interval });
+    log.info('Found users', { evt: 'users_found', count: namespaceGroups.length, interval });
 
     const metrics = metricsStore[interval];
     if (!metrics) return;
@@ -352,7 +344,7 @@ async function updateMetrics(interval: 'default' | 'daily' | 'weekly' | 'monthly
     metrics.user.reset();
     log.info(`Reset user metrics counter for ${interval}`, { evt: 'metrics_reset', interval });
 
-    users.forEach(v => {
+    namespaceGroups.forEach(v => {
       log.info(`Incrementing user metric for ${interval}`, {
         evt: 'increment_metric',
         interval,

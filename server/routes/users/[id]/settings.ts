@@ -1,109 +1,157 @@
 import { useAuth } from '~/utils/auth';
 import { z } from 'zod';
 import { scopedLogger } from '~/utils/logger';
+import { db, user_settings, eq } from '~/utils/db';
 
 const log = scopedLogger('user-settings');
 
-interface UserSettings {
-  id: string;
-  application_theme: string | null;
-  application_language: string;
-  default_subtitle_language: string | null;
-  proxy_urls: string[];
-  trakt_key: string | null;
-  febbox_key: string | null;
-  enable_thumbnails: boolean;
-  enable_autoplay: boolean;
-  enable_skip_credits: boolean;
-  enable_discover: boolean;
-  enable_featured: boolean;
-  enable_details_modal: boolean;
-  enable_image_logos: boolean;
-  enable_carousel_view: boolean;
-  source_order: string[];
-  enable_source_order: boolean;
-  proxy_tmdb: boolean;
-}
-
-const userSettingsSchema = z.object({
+const settingsSchema = z.object({
   applicationTheme: z.string().nullable().optional(),
-  applicationLanguage: z.string().optional().default('en'),
+  customTheme: z.any().optional(),
+  applicationLanguage: z.string().nullable().optional(),
   defaultSubtitleLanguage: z.string().nullable().optional(),
   proxyUrls: z.array(z.string()).nullable().optional(),
   traktKey: z.string().nullable().optional(),
   febboxKey: z.string().nullable().optional(),
-  enableThumbnails: z.boolean().optional().default(false),
-  enableAutoplay: z.boolean().optional().default(true),
-  enableSkipCredits: z.boolean().optional().default(true),
-  enableDiscover: z.boolean().optional().default(true),
-  enableFeatured: z.boolean().optional().default(false),
-  enableDetailsModal: z.boolean().optional().default(false),
-  enableImageLogos: z.boolean().optional().default(true),
-  enableCarouselView: z.boolean().optional().default(false),
-  sourceOrder: z.array(z.string()).optional().default([]),
-  enableSourceOrder: z.boolean().optional().default(false),
-  proxyTmdb: z.boolean().optional().default(false),
+  enableAutoplay: z.boolean().optional(),
+  enableCarouselView: z.boolean().optional(),
+  enableDetailsModal: z.boolean().optional(),
+  enableDiscover: z.boolean().optional(),
+  enableFeatured: z.boolean().optional(),
+  enableImageLogos: z.boolean().optional(),
+  enableSkipCredits: z.boolean().optional(),
+  enableSourceOrder: z.boolean().optional(),
+  enableThumbnails: z.boolean().optional(),
+  proxyTmdb: z.boolean().optional(),
+  sourceOrder: z.array(z.string()).optional(),
+  disabledEmbeds: z.array(z.string()).optional(),
+  disabledSources: z.array(z.string()).optional(),
+  embedOrder: z.array(z.string()).optional(),
+  enableDoubleClickToSeek: z.boolean().optional(),
+  enableEmbedOrder: z.boolean().optional(),
+  enableHoldToBoost: z.boolean().optional(),
+  enableLowPerformanceMode: z.boolean().optional(),
+  enableNativeSubtitles: z.boolean().optional(),
+  forceCompactEpisodeView: z.boolean().optional(),
+  homeSectionOrder: z.array(z.string()).optional(),
+  manualSourceSelection: z.boolean().optional(),
+  debridService: z.string().nullable().optional(),
+  debridToken: z.string().nullable().optional(),
+  enableAutoResumeOnPlaybackError: z.boolean().optional(),
+  tidbKey: z.string().nullable().optional(),
+  enablePauseOverlay: z.boolean().optional(),
 });
+
+function toRow(s: typeof settingsSchema._output) {
+  const row: Record<string, unknown> = {};
+  if (s.applicationTheme !== undefined) row.application_theme = s.applicationTheme;
+  if (s.customTheme !== undefined) row.custom_theme = s.customTheme;
+  if (s.applicationLanguage !== undefined) row.application_language = s.applicationLanguage;
+  if (s.defaultSubtitleLanguage !== undefined) row.default_subtitle_language = s.defaultSubtitleLanguage;
+  if (s.proxyUrls !== undefined) row.proxy_urls = s.proxyUrls ?? [];
+  if (s.traktKey !== undefined) row.trakt_key = s.traktKey;
+  if (s.febboxKey !== undefined) row.febbox_key = s.febboxKey;
+  if (s.enableAutoplay !== undefined) row.enable_autoplay = s.enableAutoplay;
+  if (s.enableCarouselView !== undefined) row.enable_carousel_view = s.enableCarouselView;
+  if (s.enableDetailsModal !== undefined) row.enable_details_modal = s.enableDetailsModal;
+  if (s.enableDiscover !== undefined) row.enable_discover = s.enableDiscover;
+  if (s.enableFeatured !== undefined) row.enable_featured = s.enableFeatured;
+  if (s.enableImageLogos !== undefined) row.enable_image_logos = s.enableImageLogos;
+  if (s.enableSkipCredits !== undefined) row.enable_skip_credits = s.enableSkipCredits;
+  if (s.enableSourceOrder !== undefined) row.enable_source_order = s.enableSourceOrder;
+  if (s.enableThumbnails !== undefined) row.enable_thumbnails = s.enableThumbnails;
+  if (s.proxyTmdb !== undefined) row.proxy_tmdb = s.proxyTmdb;
+  if (s.sourceOrder !== undefined) row.source_order = s.sourceOrder;
+  if (s.disabledEmbeds !== undefined) row.disabled_embeds = s.disabledEmbeds;
+  if (s.disabledSources !== undefined) row.disabled_sources = s.disabledSources;
+  if (s.embedOrder !== undefined) row.embed_order = s.embedOrder;
+  if (s.enableDoubleClickToSeek !== undefined) row.enable_double_click_to_seek = s.enableDoubleClickToSeek;
+  if (s.enableEmbedOrder !== undefined) row.enable_embed_order = s.enableEmbedOrder;
+  if (s.enableHoldToBoost !== undefined) row.enable_hold_to_boost = s.enableHoldToBoost;
+  if (s.enableLowPerformanceMode !== undefined) row.enable_low_performance_mode = s.enableLowPerformanceMode;
+  if (s.enableNativeSubtitles !== undefined) row.enable_native_subtitles = s.enableNativeSubtitles;
+  if (s.forceCompactEpisodeView !== undefined) row.force_compact_episode_view = s.forceCompactEpisodeView;
+  if (s.homeSectionOrder !== undefined) row.home_section_order = s.homeSectionOrder;
+  if (s.manualSourceSelection !== undefined) row.manual_source_selection = s.manualSourceSelection;
+  if (s.debridService !== undefined) row.debrid_service = s.debridService;
+  if (s.debridToken !== undefined) row.debrid_token = s.debridToken;
+  if (s.enableAutoResumeOnPlaybackError !== undefined) row.enable_auto_resume_on_playback_error = s.enableAutoResumeOnPlaybackError;
+  if (s.tidbKey !== undefined) row.tidb_key = s.tidbKey;
+  if (s.enablePauseOverlay !== undefined) row.enable_pause_overlay = s.enablePauseOverlay;
+  return row;
+}
+
+function toResponse(row: typeof user_settings.$inferSelect) {
+  return {
+    id: row.id,
+    applicationTheme: row.application_theme,
+    customTheme: row.custom_theme,
+    applicationLanguage: row.application_language,
+    defaultSubtitleLanguage: row.default_subtitle_language,
+    proxyUrls: row.proxy_urls,
+    traktKey: row.trakt_key,
+    febboxKey: row.febbox_key,
+    debridToken: row.debrid_token,
+    debridService: row.debrid_service,
+    tidbKey: row.tidb_key,
+    enableThumbnails: row.enable_thumbnails,
+    enableAutoplay: row.enable_autoplay,
+    enableSkipCredits: row.enable_skip_credits,
+    enableDiscover: row.enable_discover,
+    enableFeatured: row.enable_featured,
+    enableDetailsModal: row.enable_details_modal,
+    enableImageLogos: row.enable_image_logos,
+    enableCarouselView: row.enable_carousel_view,
+    forceCompactEpisodeView: row.force_compact_episode_view,
+    sourceOrder: row.source_order,
+    enableSourceOrder: row.enable_source_order,
+    disabledSources: row.disabled_sources,
+    embedOrder: row.embed_order,
+    enableEmbedOrder: row.enable_embed_order,
+    disabledEmbeds: row.disabled_embeds,
+    proxyTmdb: row.proxy_tmdb,
+    enableLowPerformanceMode: row.enable_low_performance_mode,
+    enableNativeSubtitles: row.enable_native_subtitles,
+    enableHoldToBoost: row.enable_hold_to_boost,
+    homeSectionOrder: row.home_section_order,
+    manualSourceSelection: row.manual_source_selection,
+    enableDoubleClickToSeek: row.enable_double_click_to_seek,
+    enableAutoResumeOnPlaybackError: row.enable_auto_resume_on_playback_error,
+    enablePauseOverlay: row.enable_pause_overlay,
+  };
+}
 
 export default defineEventHandler(async event => {
   const userId = event.context.params?.id;
-
   const session = await useAuth().getCurrentSession();
 
   if (session.user !== userId) {
-    throw createError({
-      statusCode: 403,
-      message: 'Permission denied',
-    });
-  }
-
-  // First check if user exists
-  const user = await prisma.users.findUnique({
-    where: { id: userId },
-  });
-
-  if (!user) {
-    throw createError({
-      statusCode: 404,
-      message: 'User not found',
-    });
+    throw createError({ statusCode: 403, message: 'Cannot access other user information' });
   }
 
   if (event.method === 'GET') {
     try {
-      const settings = await prisma.user_settings.findUnique({
-        where: { id: userId },
-      }) as unknown as UserSettings | null;
+      const [settings] = await db
+        .select()
+        .from(user_settings)
+        .where(eq(user_settings.id, userId!))
+        .limit(1);
 
-      return {
-        id: userId,
-        applicationTheme: settings?.application_theme || null,
-        applicationLanguage: settings?.application_language || 'en',
-        defaultSubtitleLanguage: settings?.default_subtitle_language || null,
-        proxyUrls: settings?.proxy_urls.length === 0 ? null : settings?.proxy_urls || null,
-        traktKey: settings?.trakt_key || null,
-        febboxKey: settings?.febbox_key || null,
-        enableThumbnails: settings?.enable_thumbnails ?? false,
-        enableAutoplay: settings?.enable_autoplay ?? true,
-        enableSkipCredits: settings?.enable_skip_credits ?? true,
-        enableDiscover: settings?.enable_discover ?? true,
-        enableFeatured: settings?.enable_featured ?? false,
-        enableDetailsModal: settings?.enable_details_modal ?? false,
-        enableImageLogos: settings?.enable_image_logos ?? true,
-        enableCarouselView: settings?.enable_carousel_view ?? false,
-        sourceOrder: settings?.source_order || [],
-        enableSourceOrder: settings?.enable_source_order ?? false,
-        proxyTmdb: settings?.proxy_tmdb ?? false,
-      };
+      if (!settings) {
+        // Insert a default row; if two concurrent GETs race, only one insert wins —
+        // the other gets nothing back but the row already exists so we re-select.
+        await db.insert(user_settings).values({ id: userId! }).onConflictDoNothing();
+        const [inserted] = await db
+          .select()
+          .from(user_settings)
+          .where(eq(user_settings.id, userId!))
+          .limit(1);
+        return toResponse(inserted);
+      }
+      return toResponse(settings);
     } catch (error) {
-      log.error('Failed to get user settings', {
-        userId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-      throw createError({
-        statusCode: 500,
-        message: 'Failed to get user settings',
-      });
+      log.error('Failed to get user settings', { userId, error: String(error) });
+      throw createError({ statusCode: 500, message: 'Failed to get user settings' });
     }
   }
 
@@ -112,85 +160,25 @@ export default defineEventHandler(async event => {
       const body = await readBody(event);
       log.info('Updating user settings', { userId, body });
 
-      const validatedBody = userSettingsSchema.parse(body);
+      const validated = settingsSchema.parse(body);
+      const row = toRow(validated);
 
-      const data = {
-        application_theme: validatedBody.applicationTheme ?? null,
-        application_language: validatedBody.applicationLanguage,
-        default_subtitle_language: validatedBody.defaultSubtitleLanguage ?? null,
-        proxy_urls: validatedBody.proxyUrls === null ? [] : validatedBody.proxyUrls || [],
-        trakt_key: validatedBody.traktKey ?? null,
-        febbox_key: validatedBody.febboxKey ?? null,
-        enable_thumbnails: validatedBody.enableThumbnails,
-        enable_autoplay: validatedBody.enableAutoplay,
-        enable_skip_credits: validatedBody.enableSkipCredits,
-        enable_discover: validatedBody.enableDiscover,
-        enable_featured: validatedBody.enableFeatured,
-        enable_details_modal: validatedBody.enableDetailsModal,
-        enable_image_logos: validatedBody.enableImageLogos,
-        enable_carousel_view: validatedBody.enableCarouselView,
-        source_order: validatedBody.sourceOrder || [],
-        enable_source_order: validatedBody.enableSourceOrder,
-        proxy_tmdb: validatedBody.proxyTmdb,
-      };
+      const [settings] = await db
+        .insert(user_settings)
+        .values({ id: userId!, ...row })
+        .onConflictDoUpdate({ target: user_settings.id, set: row })
+        .returning();
 
-      log.info('Preparing to upsert settings', { userId, data });
-
-      const settings = await prisma.user_settings.upsert({
-        where: { id: userId },
-        update: data,
-        create: {
-          id: userId,
-          ...data,
-        },
-      }) as unknown as UserSettings;
-
-      log.info('Settings updated successfully', { userId });
-
-      return {
-        id: userId,
-        applicationTheme: settings.application_theme,
-        applicationLanguage: settings.application_language,
-        defaultSubtitleLanguage: settings.default_subtitle_language,
-        proxyUrls: settings.proxy_urls.length === 0 ? null : settings.proxy_urls,
-        traktKey: settings.trakt_key,
-        febboxKey: settings.febbox_key,
-        enableThumbnails: settings.enable_thumbnails,
-        enableAutoplay: settings.enable_autoplay,
-        enableSkipCredits: settings.enable_skip_credits,
-        enableDiscover: settings.enable_discover,
-        enableFeatured: settings.enable_featured,
-        enableDetailsModal: settings.enable_details_modal,
-        enableImageLogos: settings.enable_image_logos,
-        enableCarouselView: settings.enable_carousel_view,
-        sourceOrder: settings.source_order,
-        enableSourceOrder: settings.enable_source_order,
-        proxyTmdb: settings.proxy_tmdb,
-      };
+      log.info('User settings updated successfully', { userId });
+      return toResponse(settings);
     } catch (error) {
-      log.error('Failed to update user settings', {
-        userId,
-        error: error instanceof Error ? error.message : String(error),
-      });
-
+      log.error('Failed to update user settings', { userId, error: String(error) });
       if (error instanceof z.ZodError) {
-        throw createError({
-          statusCode: 400,
-          message: 'Invalid settings data',
-          cause: error.errors,
-        });
+        throw createError({ statusCode: 400, message: 'Invalid settings data' });
       }
-
-      throw createError({
-        statusCode: 500,
-        message: 'Failed to update settings',
-        cause: error instanceof Error ? error.message : 'Unknown error',
-      });
+      throw createError({ statusCode: 500, message: 'Failed to update user settings' });
     }
   }
 
-  throw createError({
-    statusCode: 405,
-    message: 'Method not allowed',
-  });
+  throw createError({ statusCode: 405, message: 'Method not allowed' });
 });

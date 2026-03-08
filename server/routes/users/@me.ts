@@ -1,17 +1,12 @@
 import { useAuth } from '~/utils/auth';
+import { db, users, eq } from '~/utils/db';
 
 export default defineEventHandler(async event => {
   const session = await useAuth().getCurrentSession();
 
-  const user = await prisma.users.findUnique({
-    where: { id: session.user },
-  });
-
+  const [user] = await db.select().from(users).where(eq(users.id, session.user)).limit(1);
   if (!user) {
-    throw createError({
-      statusCode: 404,
-      message: 'User not found',
-    });
+    throw createError({ statusCode: 404, message: 'User not found' });
   }
 
   return {
@@ -19,6 +14,7 @@ export default defineEventHandler(async event => {
       id: user.id,
       publicKey: user.public_key,
       namespace: user.namespace,
+      nickname: user.nickname,
       profile: user.profile,
       permissions: user.permissions,
     },
