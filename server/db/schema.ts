@@ -89,8 +89,7 @@ export const progress_items = pgTable(
   },
   table => [
     uniqueIndex('progress_items_tmdb_id_user_id_season_id_episode_id_unique')
-      .on(table.tmdb_id, table.user_id, table.season_id, table.episode_id)
-      .nullsNotDistinct(),
+      .on(table.tmdb_id, table.user_id, table.season_id, table.episode_id),
   ],
 );
 
@@ -188,8 +187,7 @@ export const watch_history = pgTable(
   },
   table => [
     uniqueIndex('watch_history_tmdb_id_user_id_season_id_episode_id_unique')
-      .on(table.tmdb_id, table.user_id, table.season_id, table.episode_id)
-      .nullsNotDistinct(),
+      .on(table.tmdb_id, table.user_id, table.season_id, table.episode_id),
   ],
 );
 

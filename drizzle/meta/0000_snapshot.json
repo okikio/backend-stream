@@ -1,5 +1,5 @@
 {
-  "id": "e701d383-8443-4288-8ef1-fc26d61eeb03",
+  "id": "a3750ef6-3081-4974-afff-621adab80622",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -362,8 +362,7 @@
           "isUnique": true,
           "concurrently": false,
           "method": "btree",
-          "with": {},
-          "nullsNotDistinct": true
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -924,8 +923,7 @@
           "isUnique": true,
           "concurrently": false,
           "method": "btree",
-          "with": {},
-          "nullsNotDistinct": true
+          "with": {}
         }
       },
       "foreignKeys": {},

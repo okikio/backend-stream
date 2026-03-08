@@ -22,7 +22,8 @@ if (!databaseUrl) {
 }
 
 // Dedicated single-connection client for migrations (avoids pooling issues)
-const client = postgres(databaseUrl, { max: 1 });
+// onnotice suppresses benign NOTICE messages from CREATE IF NOT EXISTS statements
+const client = postgres(databaseUrl, { max: 1, onnotice: () => {} });
 const db = drizzle(client);
 
 const migrationsFolder = join(__dirname, '..', 'drizzle');
