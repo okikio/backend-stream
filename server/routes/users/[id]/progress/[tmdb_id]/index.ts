@@ -1,119 +1,100 @@
 import { useAuth } from '~/utils/auth';
 import { z } from 'zod';
-import { randomUUID } from 'crypto';
-
-const progressMetaSchema = z.object({
-  title: z.string(),
-  poster: z.string().optional(),
-  type: z.enum(['movie', 'tv', 'show']),
-  year: z.number().optional(),
-});
+import { randomUUID } from 'node:crypto';
+import { db, progress_items, eq, and } from '~/utils/db';
 
 const progressItemSchema = z.object({
-  meta: progressMetaSchema,
   tmdbId: z.string(),
-  duration: z.number().transform(Math.round),
-  watched: z.number().transform(Math.round),
-  seasonId: z.string().optional(),
-  episodeId: z.string().optional(),
-  seasonNumber: z.number().optional(),
-  episodeNumber: z.number().optional(),
-  updatedAt: z.string().datetime({ offset: true }).optional(),
+  meta: z.object({ title: z.string(), type: z.string(), year: z.number().optional(), poster: z.string().optional() }),
+  duration: z.number().min(0),
+  watched: z.number().min(0),
+  seasonId: z.string().optional().nullable(),
+  episodeId: z.string().optional().nullable(),
+  seasonNumber: z.number().optional().nullable(),
+  episodeNumber: z.number().optional().nullable(),
+  updatedAt: z.string().optional(),
 });
 
-// 13th July 2021 - movie-web epoch
-const minEpoch = 1626134400000;
-
-const coerceDateTime = (dateTime?: string) => {
-  const epoch = dateTime ? new Date(dateTime).getTime() : Date.now();
-  return new Date(Math.max(minEpoch, Math.min(epoch, Date.now())));
-};
-
-const normalizeIds = (metaType: string, seasonId?: string, episodeId?: string) => ({
-  seasonId: metaType === 'movie' ? '\n' : seasonId || null,
-  episodeId: metaType === 'movie' ? '\n' : episodeId || null,
-});
-
-const formatProgressItem = (item: any) => ({
-  id: item.id,
-  tmdbId: item.tmdb_id,
-  userId: item.user_id,
-  seasonId: item.season_id === '\n' ? null : item.season_id,
-  episodeId: item.episode_id === '\n' ? null : item.episode_id,
-  seasonNumber: item.season_number,
-  episodeNumber: item.episode_number,
-  meta: item.meta,
-  duration: Number(item.duration),
-  watched: Number(item.watched),
-  updatedAt: item.updated_at,
-});
-
-export default defineEventHandler(async (event) => {
-  const { id: userId, tmdb_id: tmdbId } = event.context.params!;
-  const method = event.method;
-
+export default defineEventHandler(async event => {
+  const userId = event.context.params?.id;
+  const tmdbId = event.context.params?.tmdb_id;
   const session = await useAuth().getCurrentSession();
+
   if (session.user !== userId) {
-    throw createError({ statusCode: 403, message: 'Unauthorized' });
+    throw createError({ statusCode: 403, message: 'Cannot access other user information' });
   }
 
-  if (method === 'PUT') {
+  if (event.method === 'PUT') {
     const body = await readBody(event);
-    let parsedBody;
-    try {
-      parsedBody = progressItemSchema.parse(body);
-    } catch (error) {
-      throw createError({ statusCode: 400, message: error.message });
-    }
-    const { meta, tmdbId, duration, watched, seasonId, episodeId, seasonNumber, episodeNumber, updatedAt } = parsedBody;
+    const validated = progressItemSchema.parse(body);
+    const now = validated.updatedAt ? new Date(validated.updatedAt) : new Date();
 
-    const now = coerceDateTime(updatedAt);
-    const { seasonId: normSeasonId, episodeId: normEpisodeId } = normalizeIds(meta.type, seasonId, episodeId);
+    const duration = BigInt(Math.round(validated.duration));
+    const watched = BigInt(Math.round(validated.watched));
 
-    const existing = await prisma.progress_items.findUnique({
-      where: { tmdb_id_user_id_season_id_episode_id: { tmdb_id: tmdbId, user_id: userId, season_id: normSeasonId, episode_id: normEpisodeId } },
-    });
+    const [item] = await db
+      .insert(progress_items)
+      .values({
+        id: randomUUID(),
+        tmdb_id: tmdbId!,
+        user_id: userId!,
+        season_id: validated.seasonId ?? null,
+        episode_id: validated.episodeId ?? null,
+        season_number: validated.seasonNumber ?? null,
+        episode_number: validated.episodeNumber ?? null,
+        meta: validated.meta,
+        duration,
+        watched,
+        updated_at: now,
+      })
+      .onConflictDoUpdate({
+        target: [progress_items.tmdb_id, progress_items.user_id, progress_items.season_id, progress_items.episode_id],
+        set: { meta: validated.meta, duration, watched, updated_at: now },
+      })
+      .returning();
 
-    const data = {
-      duration: BigInt(duration),
-      watched: BigInt(watched),
-      meta,
-      updated_at: now,
+    return {
+      id: item.id,
+      tmdbId: item.tmdb_id,
+      seasonId: item.season_id,
+      episodeId: item.episode_id,
+      seasonNumber: item.season_number,
+      episodeNumber: item.episode_number,
+      meta: item.meta,
+      duration: Number(item.duration),
+      watched: Number(item.watched),
+      updatedAt: item.updated_at,
     };
-
-    const progressItem = existing
-      ? await prisma.progress_items.update({ where: { id: existing.id }, data })
-      : await prisma.progress_items.create({
-          data: {
-            id: randomUUID(),
-            tmdb_id: tmdbId,
-            user_id: userId,
-            season_id: normSeasonId,
-            episode_id: normEpisodeId,
-            season_number: seasonNumber || null,
-            episode_number: episodeNumber || null,
-            ...data,
-          },
-        });
-
-    return formatProgressItem(progressItem);
   }
 
-  if (method === 'DELETE') {
+  if (event.method === 'DELETE') {
     const body = await readBody(event).catch(() => ({}));
-    const where: any = { user_id: userId, tmdb_id: tmdbId };
+    const meta = body?.meta;
 
-    if (body.seasonId) where.season_id = body.seasonId;
-    else if (body.meta?.type === 'movie') where.season_id = '\n';
+    if (meta?.type === 'show') {
+      // Delete all episodes for this show
+      const deleted = await db
+        .delete(progress_items)
+        .where(and(eq(progress_items.user_id, userId!), eq(progress_items.tmdb_id, tmdbId!)))
+        .returning();
+      return { count: deleted.length };
+    }
 
-    if (body.episodeId) where.episode_id = body.episodeId;
-    else if (body.meta?.type === 'movie') where.episode_id = '\n';
+    // Delete specific item (movie or single episode)
+    const seasonId = body?.seasonId ?? null;
+    const episodeId = body?.episodeId ?? null;
 
-    const items = await prisma.progress_items.findMany({ where });
-    if (items.length === 0) return { count: 0, tmdbId, episodeId: body.episodeId, seasonId: body.seasonId };
-
-    await prisma.progress_items.deleteMany({ where });
-    return { count: items.length, tmdbId, episodeId: body.episodeId, seasonId: body.seasonId };
+    const deleted = await db
+      .delete(progress_items)
+      .where(
+        and(
+          eq(progress_items.user_id, userId!),
+          eq(progress_items.tmdb_id, tmdbId!),
+          seasonId ? eq(progress_items.season_id, seasonId) : eq(progress_items.tmdb_id, tmdbId!),
+        ),
+      )
+      .returning();
+    return { count: deleted.length };
   }
 
   throw createError({ statusCode: 405, message: 'Method not allowed' });

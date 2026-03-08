@@ -1,6 +1,6 @@
 import { useAuth } from '~/utils/auth';
 import { z } from 'zod';
-import { bookmarks } from '@prisma/client';
+import { db, bookmarks, eq, and } from '~/utils/db';
 
 const bookmarkMetaSchema = z.object({
   title: z.string(),
@@ -18,32 +18,24 @@ const bookmarkDataSchema = z.object({
 
 export default defineEventHandler(async event => {
   const userId = event.context.params?.id;
-  const method = event.method;
-
   const session = await useAuth().getCurrentSession();
 
   if (session.user !== userId) {
-    throw createError({
-      statusCode: 403,
-      message: 'Cannot access other user information',
-    });
+    throw createError({ statusCode: 403, message: 'Cannot access other user information' });
   }
 
-  if (method === 'GET') {
-    const bookmarks = await prisma.bookmarks.findMany({
-      where: { user_id: userId },
-    });
-
-    return bookmarks.map((bookmark: bookmarks) => ({
-      tmdbId: bookmark.tmdb_id,
-      meta: bookmark.meta,
-      group: bookmark.group,
-      favoriteEpisodes: bookmark.favorite_episodes,
-      updatedAt: bookmark.updated_at,
+  if (event.method === 'GET') {
+    const rows = await db.select().from(bookmarks).where(eq(bookmarks.user_id, userId!));
+    return rows.map(b => ({
+      tmdbId: b.tmdb_id,
+      meta: b.meta,
+      group: b.group,
+      favoriteEpisodes: b.favorite_episodes,
+      updatedAt: b.updated_at,
     }));
   }
 
-  if (method === 'PUT') {
+  if (event.method === 'PUT') {
     const body = await readBody(event);
     const validatedBody = z.array(bookmarkDataSchema).parse(body);
 
@@ -51,52 +43,41 @@ export default defineEventHandler(async event => {
     const results = [];
 
     for (const item of validatedBody) {
-      // Normalize group to always be an array
-      const normalizedGroup = item.group 
-        ? (Array.isArray(item.group) ? item.group : [item.group])
+      const normalizedGroup = item.group
+        ? Array.isArray(item.group) ? item.group : [item.group]
         : [];
+      const normalizedFav = item.favoriteEpisodes ?? [];
 
-      // Normalize favoriteEpisodes to always be an array
-      const normalizedFavoriteEpisodes = item.favoriteEpisodes || [];
-
-      const bookmark = await prisma.bookmarks.upsert({
-        where: {
-          tmdb_id_user_id: {
-            tmdb_id: item.tmdbId,
-            user_id: userId,
-          },
-        },
-        update: {
-          meta: item.meta,
-          group: normalizedGroup,
-          favorite_episodes: normalizedFavoriteEpisodes,
-          updated_at: now,
-        } as any,
-        create: {
+      const [bm] = await db
+        .insert(bookmarks)
+        .values({
           tmdb_id: item.tmdbId,
-          user_id: userId,
+          user_id: userId!,
           meta: item.meta,
           group: normalizedGroup,
-          favorite_episodes: normalizedFavoriteEpisodes,
+          favorite_episodes: normalizedFav,
           updated_at: now,
-        } as any,
-      }) as bookmarks;
-
+        })
+        .onConflictDoUpdate({
+          target: [bookmarks.tmdb_id, bookmarks.user_id],
+          set: {
+            meta: item.meta,
+            group: normalizedGroup,
+            favorite_episodes: normalizedFav,
+            updated_at: now,
+          },
+        })
+        .returning();
       results.push({
-        tmdbId: bookmark.tmdb_id,
-        meta: bookmark.meta,
-        group: bookmark.group,
-        favoriteEpisodes: bookmark.favorite_episodes,
-        updatedAt: bookmark.updated_at,
+        tmdbId: bm.tmdb_id,
+        meta: bm.meta,
+        group: bm.group,
+        favoriteEpisodes: bm.favorite_episodes,
+        updatedAt: bm.updated_at,
       });
     }
-
     return results;
   }
 
-
-  throw createError({
-    statusCode: 405,
-    message: 'Method not allowed',
-  });
+  throw createError({ statusCode: 405, message: 'Method not allowed' });
 });

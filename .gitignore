@@ -1,13 +1,48 @@
-node_modules
-dist
-.data
-.nitro
-.cache
-.output
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build output
+.output/
+dist/
+build/
+coverage/
+.nyc_output/
+.cache/
+*.tsbuildinfo
+
+# Nitro
+.nitro/
+
+# Local env / secrets
 .env
-.vscode
-.metrics.json
-.metrics_weekly.json
-.metrics_monthly.json
-.metrics_daily.json
-generated
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+
+# Local DB
+*.sqlite
+*.sqlite3
+*.db
+
+# Logs
+logs/
+*.log
+*.pid
+*.pid.lock
+
+# Metrics state files (ephemeral)
+.metrics*.json
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

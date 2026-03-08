@@ -1,5 +1,5 @@
 import { Counter, register, collectDefaultMetrics, Histogram, Summary, Registry } from 'prom-client';
-import { prisma } from './prisma';
+import { db, users, count, sql } from './db';
 import { scopedLogger } from '~/utils/logger';
 import fs from 'fs';
 import path from 'path';
@@ -331,12 +331,12 @@ async function updateMetrics(interval: 'default' | 'daily' | 'weekly' | 'monthly
     }
     log.info(`Fetching users from database for ${interval} metrics...`, { evt: 'update_metrics_start', interval });
 
-    const users = await prisma.users.groupBy({
-      by: ['namespace'],
-      _count: true,
-    });
+    const namespaceGroups = await db
+      .select({ namespace: users.namespace, _count: count() })
+      .from(users)
+      .groupBy(users.namespace);
 
-    log.info('Found users', { evt: 'users_found', count: users.length, interval });
+    log.info('Found users', { evt: 'users_found', count: namespaceGroups.length, interval });
 
     const metrics = metricsStore[interval];
     if (!metrics) return;
@@ -344,7 +344,7 @@ async function updateMetrics(interval: 'default' | 'daily' | 'weekly' | 'monthly
     metrics.user.reset();
     log.info(`Reset user metrics counter for ${interval}`, { evt: 'metrics_reset', interval });
 
-    users.forEach(v => {
+    namespaceGroups.forEach(v => {
       log.info(`Incrementing user metric for ${interval}`, {
         evt: 'increment_metric',
         interval,

@@ -5,29 +5,29 @@
     "build": "nitro build",
     "dev": "nitro dev",
     "prepare": "nitro prepare",
-    "preview": "node .output/server/index.mjs"
+    "preview": "node .output/server/index.mjs",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^8.31.1",
     "@typescript-eslint/parser": "^8.31.1",
+    "drizzle-kit": "^0.31.0",
     "eslint": "^9.26.0",
     "eslint-config-prettier": "^10.1.2",
     "eslint-plugin-prettier": "^5.4.0",
     "nitropack": "latest",
-    "prettier": "^3.5.3",
-    "prisma": "^7.0.1"
+    "prettier": "^3.5.3"
   },
   "dependencies": {
-    "@prisma/adapter-pg": "^7.0.1",
-    "@prisma/client": "^7.0.1",
     "cheerio": "^1.0.0",
-    "dotenv": "^16.4.7",
-    "jsonwebtoken": "^9.0.2",
+    "drizzle-orm": "^0.43.0",
+    "jose": "^5.10.0",
+    "postgres": "^3.4.7",
     "prom-client": "^15.1.3",
     "tmdb-ts": "^2.0.1",
     "trakt.tv": "^8.2.0",
-    "tweetnacl": "^1.0.3",
-    "whatwg-url": "^14.2.0",
     "zod": "^3.24.2"
   }
 }

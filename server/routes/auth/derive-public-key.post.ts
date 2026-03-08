@@ -1,49 +1,55 @@
 import { z } from 'zod';
-import { pbkdf2 } from 'crypto';
-import nacl from 'tweetnacl';
+import { createPrivateKey, createPublicKey } from 'node:crypto';
 
 const requestSchema = z.object({
   mnemonic: z.string().min(1),
 });
 
-function toBase64Url(input: Uint8Array): string {
-  const base64 = Buffer.from(input).toString('base64');
-  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+function toBase64Url(buf: Uint8Array): string {
+  return Buffer.from(buf)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
 }
 
-function pbkdf2Async(password: string, salt: string, iterations: number, keyLen: number, digest: string): Promise<Uint8Array> {
-  return new Promise((resolve, reject) => {
-    pbkdf2(password, salt, iterations, keyLen, digest, (err, derivedKey) => {
-      if (err) return reject(err);
-      resolve(new Uint8Array(derivedKey));
-    });
-  });
+// PKCS#8 DER header for an Ed25519 seed (RFC 8410)
+const PKCS8_ED25519_HEADER = Buffer.from('302e020100300506032b657004220420', 'hex');
+
+function deriveEd25519PublicKey(seed: Uint8Array): Uint8Array {
+  const pkcs8 = Buffer.concat([PKCS8_ED25519_HEADER, Buffer.from(seed)]);
+  const privateKey = createPrivateKey({ key: pkcs8, format: 'der', type: 'pkcs8' });
+  const publicKey = createPublicKey(privateKey);
+  // SPKI export: last 32 bytes are the raw Ed25519 public key
+  const spki = publicKey.export({ type: 'spki', format: 'der' }) as Buffer;
+  return new Uint8Array(spki).slice(-32);
 }
 
-export default defineEventHandler(async (event) => {
+export default defineEventHandler(async event => {
   const body = await readBody(event);
 
   const parsed = requestSchema.safeParse(body);
   if (!parsed.success) {
-    throw createError({
-      statusCode: 400,
-      message: 'Invalid request body',
-    });
+    throw createError({ statusCode: 400, message: 'Invalid request body' });
   }
 
   const { mnemonic } = parsed.data;
 
-  // PBKDF2 (HMAC-SHA256) -> 32-byte seed, iterations = 2048, salt = "mnemonic"
-  const seed = await pbkdf2Async(mnemonic, 'mnemonic', 2048, 32, 'sha256');
+  // PBKDF2-HMAC-SHA256: 2048 iterations, 32-byte output, salt = "mnemonic"
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(mnemonic),
+    'PBKDF2',
+    false,
+    ['deriveBits'],
+  );
+  const derivedBits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: new TextEncoder().encode('mnemonic'), iterations: 2048, hash: 'SHA-256' },
+    keyMaterial,
+    256,
+  );
+  const seed = new Uint8Array(derivedBits);
 
-  // Deterministic Ed25519 keypair from seed
-  const keyPair = nacl.sign.keyPair.fromSeed(seed);
-  const publicKeyBase64Url = toBase64Url(keyPair.publicKey);
-
-  return { publicKey: publicKeyBase64Url };
+  const publicKeyBytes = deriveEd25519PublicKey(seed);
+  return { publicKey: toBase64Url(publicKeyBytes) };
 });
-
-
-// curl -X POST http://localhost:3000/auth/derive-public-key \
-//   -H 'Content-Type: application/json' \
-//   -d '{"mnemonic":"right inject hazard canoe carry unfair cram physical chief nice real tribute"}'

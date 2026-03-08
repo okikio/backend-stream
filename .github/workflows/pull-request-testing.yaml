@@ -1,4 +1,4 @@
-name: PR Test - Build and Integration Test
+name: PR Test – Build and Integration Test
 
 on:
   pull_request:
@@ -37,24 +37,19 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm install
-
-      - name: Generate Prisma client
-        env:
-          DATABASE_URL: postgresql://testuser:testpassword@localhost:5432/testdb
-        run: npx prisma generate
+        run: npm ci
 
       - name: Run database migrations
         env:
           DATABASE_URL: postgresql://testuser:testpassword@localhost:5432/testdb
-        run: npx prisma migrate deploy
+        run: node scripts/migrate.mjs
 
       - name: Build the backend
         env:
           DATABASE_URL: postgresql://testuser:testpassword@localhost:5432/testdb
           META_NAME: 'CI Backend Test server'
           META_DESCRIPTION: 'CI Test Instance'
-          CRYPTO_SECRET: '0GwvbW7ZHlpZ6y0uSkU22Xi7XjoMpHX' # This is just for the CI server. DO NOT USE IN PROD
+          CRYPTO_SECRET: '0GwvbW7ZHlpZ6y0uSkU22Xi7XjoMpHX'
         run: npm run build
 
       - name: Start the backend server
@@ -66,9 +61,8 @@ jobs:
         run: |
           node .output/server/index.mjs &
           echo $! > server.pid
-          # Wait for server to be ready
           for i in {1..30}; do
-            if curl -s http://localhost:3000 > /dev/null; then
+            if curl -sf http://localhost:3000 > /dev/null 2>&1; then
               echo "Server is ready!"
               break
             fi
@@ -81,14 +75,9 @@ jobs:
           response=$(curl -s http://localhost:3000)
           echo "Server response: $response"
           if echo "$response" | grep -q "Backend is working"; then
-            echo "+------------------+------+"
-            echo "| Backend Working? | True |"
-            echo "+------------------+------+"
-
+            echo "✅ Backend is working"
           else
-            echo "+------------------+--------+"
-            echo "| Backend Working? | FAILED |"
-            echo "+------------------+--------+"
+            echo "❌ Backend check FAILED"
             exit 1
           fi
 
@@ -102,7 +91,7 @@ jobs:
             kill $(cat server.pid) 2>/dev/null || true
           fi
 
-      - name: Upload build artifacts
+      - name: Upload build artifacts on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
