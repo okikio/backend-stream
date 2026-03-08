@@ -1,7 +1,7 @@
 # BackendV2
 follow me on [GitHub](https://github.com/FifthWit)
 
-BackendV2 is a from scratch rewrite of movie-web's backend using [Nitro](https://nitro.build), and [Prisma](https://prisma.io). 
+BackendV2 is a from scratch rewrite of movie-web's backend using [Nitro](https://nitro.build), and [Drizzle ORM](https://orm.drizzle.team). 
 
 ## Deployment
 There are multiple supported ways to deploy BackendV2 based on your needs:
@@ -69,7 +69,7 @@ npm install && npm run build
 ```
 3. Run the backend
 ```sh
-node .nitro/index.mjs
+node .output/server/index.mjs
 ```
 
 ## Setup your environment variables:
@@ -83,6 +83,28 @@ cp .env.example .env
 
 > [!NOTE]
 > for postgres you may want to use a service like [Neon](https://neon.tech) or host your own with docker, to do that just look it up
+
+## Releasing a new version
+
+The release pipeline is fully automated via GitHub Actions. To publish a new container image and GitHub Release:
+
+1. **Trigger the Bump Version workflow** from the Actions tab:
+   - Go to **Actions → Bump Version → Run workflow**
+   - Choose the bump type: `patch`, `minor`, or `major`
+   - Click **Run workflow**
+
+   This commits the new version to `package.json` on `master`, which automatically triggers the **Build and Deploy** workflow.
+
+2. **What happens automatically after the version bump:**
+   - The backend is built and uploaded as an artifact (`movie-web.backend.zip`)
+   - A GitHub Release is created at the new tag (e.g. `v2.2.0`) with auto-generated release notes
+   - A multi-arch Docker image (`linux/amd64` + `linux/arm64`) is built and pushed to GHCR:
+     - `ghcr.io/<owner>/<repo>:<version>` (e.g. `ghcr.io/okikio/backend-stream:2.2.0`)
+     - `ghcr.io/<owner>/<repo>:latest`
+     - `ghcr.io/<owner>/<repo>:sha-<short-sha>`
+
+> [!NOTE]
+> Pushing to `master` without bumping the version is safe — the release job detects whether the current version tag already has a release and skips creation if it does, so the Docker image is always refreshed while duplicate GitHub Releases are never created.
 
 ## Contributing
 We love contributors, it helps the community so much, if you are interested in contributing here are some steps:
