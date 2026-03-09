@@ -93,18 +93,18 @@ The release pipeline is fully automated via GitHub Actions. To publish a new con
    - Choose the bump type: `patch`, `minor`, or `major`
    - Click **Run workflow**
 
-   This commits the new version to `package.json` on `master`, which automatically triggers the **Build and Deploy** workflow.
+   This commits the updated `package.json` and `package-lock.json` to `master`, then explicitly dispatches the **Build and Deploy** workflow.
 
 2. **What happens automatically after the version bump:**
-   - The backend is built and uploaded as an artifact (`movie-web.backend.zip`)
-   - A GitHub Release is created at the new tag (e.g. `v2.2.0`) with auto-generated release notes
+   - The backend is built and the `.output` directory is uploaded as a GitHub Actions artifact named `backend`
+   - A GitHub Release is created at the new tag (e.g. `v2.2.0`) with auto-generated release notes, which includes a packaged backend asset (`movie-web.backend.zip`)
    - A multi-arch Docker image (`linux/amd64` + `linux/arm64`) is built and pushed to GHCR:
      - `ghcr.io/<owner>/<repo>:<version>` (e.g. `ghcr.io/okikio/backend-stream:2.2.0`)
      - `ghcr.io/<owner>/<repo>:latest`
      - `ghcr.io/<owner>/<repo>:sha-<short-sha>`
 
 > [!NOTE]
-> Pushing to `master` without bumping the version is safe — the release job detects whether the current version tag already has a release and skips creation if it does, so the Docker image is always refreshed while duplicate GitHub Releases are never created.
+> Pushing to `master` without bumping the version is safe — the release job detects whether the current version tag already has a GitHub Release and skips creation if it does, so the Docker image is always refreshed while duplicate GitHub Releases are never created.
 
 ## Contributing
 We love contributors, it helps the community so much, if you are interested in contributing here are some steps:

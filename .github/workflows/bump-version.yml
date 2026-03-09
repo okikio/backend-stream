@@ -19,6 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: write
 
     steps:
       - name: Checkout code
@@ -42,10 +43,17 @@ jobs:
 
       - name: Get new version
         id: new-version
-        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+        run: |
+          version=$(node -p 'require("./package.json").version')
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Commit and push version bump
         run: |
           git add package.json package-lock.json
           git commit -m "chore: bump version to v${{ steps.new-version.outputs.version }}"
           git push origin master
+
+      - name: Trigger Build and Deploy workflow
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh workflow run release.yml --ref master
