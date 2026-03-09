@@ -5,10 +5,11 @@ import { db, challenge_codes, eq } from './db';
 const CHALLENGE_EXPIRY_MS = 10 * 60 * 1000;
 
 // ─── Ed25519 verification via Web Crypto (Node.js 22+ / stable) ───────────────
-function fromBase64Url(b64url: string): Uint8Array {
+function fromBase64Url(b64url: string): Uint8Array<ArrayBuffer> {
   let b64 = b64url.replace(/-/g, '+').replace(/_/g, '/');
   while (b64.length % 4 !== 0) b64 += '=';
-  return Uint8Array.from(Buffer.from(b64, 'base64'));
+  const buf = Buffer.from(b64, 'base64');
+  return new Uint8Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer);
 }
 
 async function verifyEd25519(

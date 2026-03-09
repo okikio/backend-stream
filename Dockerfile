@@ -2,7 +2,7 @@
 # ─────────────────────────────────────────────────────────────
 # Multi-stage build: dependencies → build → production runtime
 # ─────────────────────────────────────────────────────────────
-FROM node:22-alpine AS deps
+FROM node:24-alpine AS deps
 WORKDIR /app
 
 # Install curl for healthchecks
@@ -13,7 +13,7 @@ COPY package*.json ./
 RUN npm ci --ignore-scripts
 
 # ─── build stage ──────────────────────────────────────────────
-FROM node:22-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -34,7 +34,7 @@ ENV META_NAME=${META_NAME} \
 RUN npm run build
 
 # ─── production image ─────────────────────────────────────────
-FROM node:22-alpine AS runner
+FROM node:24-alpine AS runner
 WORKDIR /app
 
 # Install curl for Coolify / health-check probes

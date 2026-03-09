@@ -117,7 +117,7 @@ export default defineEventHandler(async event => {
   } catch (error) {
     log.error('Failed to import progress', { userId, error: String(error) });
     if (error instanceof z.ZodError) {
-      throw createError({ statusCode: 400, message: 'Invalid progress data', cause: error.errors });
+      throw createError({ statusCode: 400, message: 'Invalid progress data', cause: error.issues });
     }
     throw createError({ statusCode: 500, message: 'Failed to import progress' });
   }
