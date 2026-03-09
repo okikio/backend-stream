@@ -9,7 +9,7 @@ const listItemSchema = z.object({
 });
 
 const updateListSchema = z.object({
-  list_id: z.string().uuid(),
+  list_id: z.uuid(),
   name: z.string().min(1).max(255).optional(),
   description: z.string().max(255).optional().nullable(),
   public: z.boolean().optional(),

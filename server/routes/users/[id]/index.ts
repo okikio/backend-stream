@@ -53,7 +53,7 @@ export default defineEventHandler(async event => {
         error: error instanceof Error ? error.message : String(error),
       });
       if (error instanceof z.ZodError) {
-        throw createError({ statusCode: 400, message: 'Invalid profile data', cause: error.errors });
+        throw createError({ statusCode: 400, message: 'Invalid profile data', cause: error.issues });
       }
       throw createError({ statusCode: 500, message: 'Failed to update user profile' });
     }
