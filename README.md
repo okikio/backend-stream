@@ -98,13 +98,29 @@ The release pipeline is fully automated via GitHub Actions. To publish a new con
 2. **What happens automatically after the version bump:**
    - The backend is built and the `.output` directory is uploaded as a GitHub Actions artifact named `backend`
    - A GitHub Release is created at the new tag (e.g. `v2.2.0`) with auto-generated release notes, which includes a packaged backend asset (`movie-web.backend.zip`)
-   - A multi-arch Docker image (`linux/amd64` + `linux/arm64`) is built and pushed to GHCR:
+   - A multi-arch OCI/Docker image (`linux/amd64` + `linux/arm64`) is built with SLSA provenance and SBOM attestations and pushed to GHCR:
      - `ghcr.io/<owner>/<repo>:<version>` (e.g. `ghcr.io/okikio/backend-stream:2.2.0`)
      - `ghcr.io/<owner>/<repo>:latest`
      - `ghcr.io/<owner>/<repo>:sha-<short-sha>`
 
 > [!NOTE]
 > Pushing to `master` without bumping the version is safe — the release job detects whether the current version tag already has a GitHub Release and skips creation if it does, so the Docker image is always refreshed while duplicate GitHub Releases are never created.
+
+### CI/CD action versions
+
+| Action | Version |
+|--------|---------|
+| `actions/checkout` | v6 |
+| `actions/setup-node` | v6 |
+| `actions/upload-artifact` | v7 |
+| `actions/download-artifact` | v8 |
+| `docker/setup-qemu-action` | v4 |
+| `docker/setup-buildx-action` | v4 |
+| `docker/login-action` | v4 |
+| `docker/metadata-action` | v6 |
+| `docker/build-push-action` | v7 |
+
+
 
 ## Contributing
 We love contributors, it helps the community so much, if you are interested in contributing here are some steps:
