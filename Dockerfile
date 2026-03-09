@@ -51,14 +51,9 @@ COPY --from=builder /app/package.json ./package.json
 COPY --from=builder /app/drizzle ./drizzle
 COPY --from=builder /app/scripts ./scripts
 
-# OCI / Docker Hub image labels (populated by docker/metadata-action)
-ARG LABEL_CREATED
-ARG LABEL_VERSION
-ARG LABEL_REVISION
-LABEL org.opencontainers.image.created="${LABEL_CREATED}" \
-      org.opencontainers.image.version="${LABEL_VERSION}" \
-      org.opencontainers.image.revision="${LABEL_REVISION}" \
-      org.opencontainers.image.source="https://github.com/okikio/backend-stream" \
+# OCI / Docker Hub image labels (static; dynamic labels are injected by
+# docker/metadata-action via the --label flags at build time)
+LABEL org.opencontainers.image.source="https://github.com/okikio/backend-stream" \
       org.opencontainers.image.title="p-stream backend" \
       org.opencontainers.image.description="Self-hostable movie/TV streaming backend"
 
